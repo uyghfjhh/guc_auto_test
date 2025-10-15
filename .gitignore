@@ -1,0 +1,137 @@
+# ==========================================
+# Java 相关
+# ==========================================
+*.class
+*.jar
+*.war
+*.ear
+*.log
+*.tmp
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files
+*.nar
+*.zip
+*.tar.gz
+*.rar
+
+# virtual machine crash logs
+hs_err_pid*
+replay_pid*
+
+# ==========================================
+# Maven 相关
+# ==========================================
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# ==========================================
+# 数据库配置文件（包含敏感信息）
+# ==========================================
+# 忽略实际配置文件，只保留模板
+src/test/resources/db.properties
+# 保留模板文件
+!src/test/resources/db.properties.template
+
+# ==========================================
+# IDE 相关
+# ==========================================
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+.idea_modules/
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+.metadata/
+.recommenders/
+
+# NetBeans
+nbproject/private/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# VS Code
+.vscode/
+*.code-workspace
+.history/
+
+# ==========================================
+# 操作系统相关
+# ==========================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ==========================================
+# 测试和日志
+# ==========================================
+*.log
+logs/
+test-output/
+*.log.*
+
+# JUnit
+junit*.properties
+
+# ==========================================
+# 临时文件
+# ==========================================
+*.swp
+*.swo
+*.bak
+*.tmp
+*.temp
+*~
+
+# ==========================================
+# 其他
+# ==========================================
+# 忽略编译生成的文件
+*.o
+*.so
+*.dylib
+*.dll
+
+# 忽略备份文件
+*.orig
+*.rej
+
