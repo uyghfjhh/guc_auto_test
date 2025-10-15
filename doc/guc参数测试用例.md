@@ -11,8 +11,9 @@
 
 
 
-## 2.1 用例1：测试非guc report参数同步
+## 2.1 测试类别：测试非guc report参数同步
 
+### 2.1.1 测试用例1：extra_float_digits参数
 （1）客户端连接1中执行 
 
 ```sql
@@ -29,8 +30,8 @@ end; -- 事务解释之后，才能启动连接2，这里不能关闭连接1，
 ```sql
 begin;
 SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;-- 检测点：这里会复用连接1的后端连接
-show extra_float_digits -- 检测点：这里显示的应该是默认值1，因为这里执行了guc参数同步，reset extra_float_digits
-
+show extra_float_digits -- 检测点：这里显示的应该是默认值1，因为这里执行了guc参数重置，reset extra_float_digits
+-- 注意这里事务不结束
 
 ```
 

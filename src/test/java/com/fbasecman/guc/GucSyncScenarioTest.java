@@ -87,6 +87,10 @@ public class GucSyncScenarioTest {
         Connection conn1 = null;
         Connection conn2 = null;
         
+        // 记录各个检测点的结果
+        boolean allPassed = true;
+        StringBuilder failureDetails = new StringBuilder();
+        
         try {
             // ============ 步骤1：客户端连接1执行 ============
             System.out.println(YELLOW + "步骤1：客户端连接1开始执行..." + RESET);
@@ -151,12 +155,10 @@ public class GucSyncScenarioTest {
                 System.out.println(GREEN + "  结果: ✓ 通过 - 后端连接已复用" + RESET);
             } else {
                 System.out.println(RED + "  结果: ✗ 失败 - 后端连接未复用" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点1失败; ");
             }
             System.out.println("─".repeat(100) + "\n");
-            
-            recordResult("用例1-" + protocolName + "-检测点1", "后端连接复用", 
-                        "pid相同", isReused ? "pid相同" : "pid不同", 
-                        isReused, "连接2应复用连接1的后端连接");
             
             // 【检测点2】检查extra_float_digits是否被重置为默认值
             printSql(2, "SHOW extra_float_digits", protocolName);
@@ -170,19 +172,16 @@ public class GucSyncScenarioTest {
             System.out.println("  期望: extra_float_digits应该是默认值 " + initialValue);
             System.out.println("  实际: 客户端连接2的后端连接中 extra_float_digits = " + valueInConn2);
             if (isReset) {
-                System.out.println(GREEN + "  结果: ✓ 通过 - GUC参数已正确同步重置" + RESET);
+                System.out.println(GREEN + "  结果: ✓ 通过 - guc参数重置正常" + RESET);
             } else {
                 System.out.println(RED + "  结果: ✗ 失败 - GUC参数未正确同步，期望=" + initialValue + ", 实际=" + valueInConn2 + RESET);
+                allPassed = false;
+                failureDetails.append("检测点2失败; ");
             }
             System.out.println("─".repeat(100) + "\n");
             
-            recordResult("用例1-" + protocolName + "-检测点2", "extra_float_digits", 
-                        initialValue, valueInConn2, isReset, 
-                        "连接2中参数应被重置为默认值");
-            
-            conn2.commit();
-            printSql(2, "COMMIT", protocolName);
-            System.out.println(YELLOW + "步骤2完成\n" + RESET);
+            // 注意：连接2的事务不提交，保持后端连接被占用
+            System.out.println(YELLOW + "步骤2完成（注意：连接2的事务不提交，保持后端连接被占用）\n" + RESET);
             
             // 等待一小段时间
             Thread.sleep(100);
@@ -208,12 +207,10 @@ public class GucSyncScenarioTest {
                 System.out.println(GREEN + "  结果: ✓ 通过 - 已分配新的后端连接" + RESET);
             } else {
                 System.out.println(RED + "  结果: ✗ 失败 - 仍是原后端连接" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点3失败; ");
             }
             System.out.println("─".repeat(100) + "\n");
-            
-            recordResult("用例1-" + protocolName + "-检测点3", "后端连接变更", 
-                        "新后端连接", isNewBackend ? "新后端连接" : "原后端连接", 
-                        isNewBackend, "连接1应获得新的后端连接");
             
             // 【检测点4】检查extra_float_digits是否恢复为之前设置的值3
             printSql(1, "SHOW extra_float_digits", protocolName);
@@ -230,23 +227,35 @@ public class GucSyncScenarioTest {
                 System.out.println(GREEN + "  结果: ✓ 通过 - GUC参数已正确同步到新后端" + RESET);
             } else {
                 System.out.println(RED + "  结果: ✗ 失败 - GUC参数未正确同步，期望=3, 实际=" + valueInConn1New + RESET);
+                allPassed = false;
+                failureDetails.append("检测点4失败; ");
             }
             System.out.println("─".repeat(100) + "\n");
-            
-            recordResult("用例1-" + protocolName + "-检测点4", "extra_float_digits", 
-                        "3", valueInConn1New, isSynced, 
-                        "连接1在新后端中参数应恢复为之前设置的值");
             
             conn1.commit();
             printSql(1, "COMMIT", protocolName);
             System.out.println(YELLOW + "步骤3完成\n" + RESET);
             
+            // 记录整个用例的测试结果
+            recordResult("测试非guc report参数同步", 
+                        "extra_float_digits参数（" + protocolName + "）", 
+                        "所有检测点通过", 
+                        allPassed ? "所有检测点通过" : failureDetails.toString(), 
+                        allPassed, 
+                        allPassed ? "通过" : "失败");
+            
         } finally {
+            // 清理资源
             if (conn1 != null) {
                 try { conn1.close(); } catch (SQLException e) { e.printStackTrace(); }
             }
             if (conn2 != null) {
-                try { conn2.close(); } catch (SQLException e) { e.printStackTrace(); }
+                try { 
+                    // 连接2在测试过程中保持事务未提交，这里关闭连接会自动回滚
+                    conn2.close(); 
+                } catch (SQLException e) { 
+                    e.printStackTrace(); 
+                }
             }
         }
     }

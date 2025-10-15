@@ -1,7 +1,7 @@
 # PostgreSQL数据库连接配置模板
 # 复制此文件为 db.properties 并修改为实际的连接信息
 
-db.url=jdbc:postgresql://localhost:5432/postgres
+db.url=jdbc:postgresql://192.168.0.12:6432/postgres
 db.user=postgres
 db.password=postgres
 
