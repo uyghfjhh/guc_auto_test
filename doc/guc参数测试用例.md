@@ -50,3 +50,207 @@ end;
 
 
 
+## 2.1 测试类别：guc report参数同步
+
+> **说明**：以下所有用例均需分别在 Simple 协议与 Extended 协议下执行，执行顺序、检测点与日志输出保持一致。涉及的客户端连接编号、后端连接 (pid/ip/port) 以及参数值均需在日志中明确记录。
+
+### 2.1.1 测试用例1：DateStyle参数——后端复用与参数同步
+
+（1）客户端连接1执行：
+
+```sql
+-- 开启事务并记录初始状态
+begin;
+show DateStyle; -- 检测点1：期望值 ISO, MDY，日志记录“客户端1-检测点1”
+
+-- 修改DateStyle并记录后端连接信息
+SET DateStyle = 'ISO, DMY'; -- 检测点2：日志打印执行SQL（红色），确保使用SET而非ALTER
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点3：记录后端连接标识与DateStyle=ISO, DMY
+
+commit; -- 释放后端连接，供连接2复用
+```
+
+（2）客户端连接2执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点4：确认复用客户端1的后端连接，日志需比对pid/ip/port
+
+show DateStyle;
+-- 检测点5：期望返回默认值 ISO, MDY，说明连接池在发放后端连接前执行了RESET/ParameterStatus，同步日志打印实际值
+-- 注意：此处保持事务未结束，不释放后端连接
+```
+
+（3）客户端连接1再次执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点6：应分配新的后端连接，pid/ip/port 与步骤(1)/(2)不同
+
+show DateStyle;
+-- 检测点7：期望返回 ISO, DMY。验证缓存同步逻辑会对新后端执行 SET，日志需明确显示同步行为
+
+commit;
+```
+
+（4）客户端连接2收尾：
+
+```sql
+show DateStyle; -- 检测点8：仍应为 ISO, MDY
+commit; -- 释放后端连接
+```
+
+### 2.1.2 测试用例2：TimeZone参数——RESET 恢复默认值
+
+（1）客户端连接1执行：
+
+```sql
+begin;
+show TimeZone; -- 检测点1：记录默认值，为 Asia/Shanghai 或 UTC（以实际环境为准）
+SET TimeZone = UTC; -- 检测点2：设置新值并输出SQL日志
+show TimeZone; -- 确保设置成功
+commit;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点3：记录后端连接标识与 TimeZone=UTC;
+```
+
+（2）客户端连接2执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点4：确认复用步骤(1)的后端连接
+
+
+show TimeZone; -- 检测点5： 期望默认值Asia/Shanghai
+-- 保持事务未提交，继续占用后端连接
+```
+
+（3）客户端连接1再次执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user; -- 确实是新分配的后端连接
+show TimeZone; -- 检测点6：期望值依然是 UTC
+commit;
+
+RESET TimeZone；
+show TimeZone；-- 检测点7：恢复默认值 Asia/Shanghai 
+```
+
+（4）客户端连接3执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点8：确认复用步骤(3)的后端连接
+show TimeZone; -- 检测点8： 期望默认值Asia/Shanghai
+```
+
+
+
+（5）客户端连接2收尾：
+
+```sql
+commit; -- 释放后端连接
+```
+
+### 2.1.3 测试用例3：多参数同步与 RESET ALL 协调
+
+目标：验证多个 guc report 参数在 RESET ALL 后是否按照路由默认值重新同步。
+
+（1）客户端连接1执行：
+
+```sql
+begin;
+SET client_encoding = 'UTF8';
+SET standard_conforming_strings = on;
+SET IntervalStyle = 'sql_standard';
+SET DateStyle = 'ISO, DMY';
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点1：日志中记录所有已修改的参数和值
+commit;
+```
+
+（2）客户端连接2执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点2：确认复用步骤(1)的后端连接
+
+RESET ALL; -- 检测点3：执行RESET ALL后，观察Fbase发送的ParameterStatus日志
+SHOW client_encoding; -- 检测点4：期望为路由默认值（通常UTF8）
+SHOW standard_conforming_strings; -- 检测点5：期望为on
+SHOW IntervalStyle; -- 检测点6：期望为postgres或默认值
+SHOW DateStyle; -- 检测点7：期望为 ISO, MDY
+-- 确认日志中输出的ParameterStatus顺序与内容，保持事务不结束
+```
+
+（3）客户端连接1再次执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点8：应分配新的后端连接
+
+SHOW client_encoding; -- 检测点9：期望值与步骤(1)设定一致，说明同步生效
+SHOW IntervalStyle; -- 检测点10：期望值为 sql_standard
+SHOW DateStyle; -- 检测点11：期望值为 ISO, DMY
+commit;
+```
+
+（4）客户端连接2收尾：
+
+```sql
+commit; -- 释放后端连接
+```
+
+### 2.1.4 测试用例4：DISCARD ALL 与 guc_report 标记清理
+
+（1）客户端连接1执行：
+
+```sql
+begin;
+SET TimeZone = 'UTC';
+SET session_authorization = current_user;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点1：记录被修改的参数以及后端连接
+commit;
+```
+
+（2）客户端连接2执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点2：确认复用步骤(1)的后端连接
+
+DISCARD ALL; -- 检测点3：日志确认Fbase触发缓存清理，同时标记 modified_report_mask=0
+SHOW TimeZone; -- 检测点4：期望恢复为默认值
+SHOW session_authorization; -- 检测点5：期望为原始数据库用户名
+-- 保持事务未提交
+```
+
+（3）客户端连接1再次执行：
+
+```sql
+begin;
+SHOW TimeZone; -- 检测点6：期望为UTC，确认同步成功
+SHOW session_authorization; -- 检测点7：期望为当前角色
+commit;
+```
+
+（4）客户端连接2收尾：
+
+```sql
+commit; -- 释放后端连接
+```
+
+> **补充要求**：
+> - 各检测点失败时需输出期望值与实际值。
+> - 日志中需明确区分 Simple / Extended 协议，可通过连接URL或控制参数强制协议模式。
+> - 测试结束后使用 `TablePrinter` 输出统一格式的结果表格，名称需与本文档中的“测试用例名称”保持一致。
