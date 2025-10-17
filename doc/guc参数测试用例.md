@@ -60,15 +60,15 @@ end;
 
 ```sql
 -- 开启事务并记录初始状态
-begin;
-show DateStyle; -- 检测点1：期望值 ISO, MDY，日志记录“客户端1-检测点1”
+
+show DateStyle; -- 检测点1：期望值 ISO，日志记录“客户端1-检测点1”
 
 -- 修改DateStyle并记录后端连接信息
 SET DateStyle = 'ISO, DMY'; -- 检测点2：日志打印执行SQL（红色），确保使用SET而非ALTER
 SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
 -- 检测点3：记录后端连接标识与DateStyle=ISO, DMY
 
-commit; -- 释放后端连接，供连接2复用
+
 ```
 
 （2）客户端连接2执行：
@@ -105,14 +105,14 @@ commit; -- 释放后端连接
 
 ### 2.1.2 测试用例2：TimeZone参数——RESET 恢复默认值
 
+--  这里要注意SET/RESET在事务中执行，就无法同步
+
 （1）客户端连接1执行：
 
 ```sql
-begin;
 show TimeZone; -- 检测点1：记录默认值，为 Asia/Shanghai 或 UTC（以实际环境为准）
 SET TimeZone = UTC; -- 检测点2：设置新值并输出SQL日志
 show TimeZone; -- 确保设置成功
-commit;
 SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
 -- 检测点3：记录后端连接标识与 TimeZone=UTC;
 ```
@@ -141,38 +141,38 @@ RESET TimeZone；
 show TimeZone；-- 检测点7：恢复默认值 Asia/Shanghai 
 ```
 
-（4）客户端连接3执行：
-
-```sql
-begin;
-SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
--- 检测点8：确认复用步骤(3)的后端连接
-show TimeZone; -- 检测点8： 期望默认值Asia/Shanghai
-```
-
-
-
-（5）客户端连接2收尾：
+（4）客户端连接2执行：
 
 ```sql
 commit; -- 释放后端连接
 ```
 
-### 2.1.3 测试用例3：多参数同步与 RESET ALL 协调
+
+
+（5）客户端连接1
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user; -- 应该复用客户端连接2的后端连接
+show TimeZone；-- 检测点8：还是默认值 Asia/Shanghai 
+end;
+```
+
+## 2.3 测试类别 ：多参数同步与 RESET ALL
 
 目标：验证多个 guc report 参数在 RESET ALL 后是否按照路由默认值重新同步。
 
 （1）客户端连接1执行：
 
 ```sql
-begin;
-SET client_encoding = 'UTF8';
-SET standard_conforming_strings = on;
-SET IntervalStyle = 'sql_standard';
-SET DateStyle = 'ISO, DMY';
+SET client_encoding = 'GBK'; --  默认值UTF8
+SET standard_conforming_strings = off; --  默认值UTF8
+SET IntervalStyle = 'sql_standard'; -- 默认值 postgres
+SET DateStyle = 'ISO, DMY'; --  默认值 ISO, MDY
+set extra_float_digits = 3; -- 默认值1
 SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
 -- 检测点1：日志中记录所有已修改的参数和值
-commit;
+RESET ALL;
 ```
 
 （2）客户端连接2执行：
@@ -181,26 +181,27 @@ commit;
 begin;
 SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
 -- 检测点2：确认复用步骤(1)的后端连接
-
-RESET ALL; -- 检测点3：执行RESET ALL后，观察Fbase发送的ParameterStatus日志
-SHOW client_encoding; -- 检测点4：期望为路由默认值（通常UTF8）
-SHOW standard_conforming_strings; -- 检测点5：期望为on
-SHOW IntervalStyle; -- 检测点6：期望为postgres或默认值
-SHOW DateStyle; -- 检测点7：期望为 ISO, MDY
--- 确认日志中输出的ParameterStatus顺序与内容，保持事务不结束
+-- 检测点3：下数值应全为默认值
+SHOW client_encoding; 
+SHOW standard_conforming_strings;
+SHOW IntervalStyle;
+SHOW DateStyle;
+SHOW extra_float_digits;
+-- 保持事务未提交，继续占用后端连接
 ```
 
 （3）客户端连接1再次执行：
 
 ```sql
-begin;
 SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
--- 检测点8：应分配新的后端连接
+-- 检测点4：应分配新的后端连接
 
-SHOW client_encoding; -- 检测点9：期望值与步骤(1)设定一致，说明同步生效
-SHOW IntervalStyle; -- 检测点10：期望值为 sql_standard
-SHOW DateStyle; -- 检测点11：期望值为 ISO, DMY
-commit;
+-- 检测点5：下数值应全为默认值
+SHOW client_encoding; 
+SHOW standard_conforming_strings;
+SHOW IntervalStyle;
+SHOW DateStyle;
+SHOW extra_float_digits;
 ```
 
 （4）客户端连接2收尾：
@@ -209,17 +210,22 @@ commit;
 commit; -- 释放后端连接
 ```
 
-### 2.1.4 测试用例4：DISCARD ALL 与 guc_report 标记清理
+
+
+## 2.4 测试类别 ：多参数同步与 RESET ALL
+
+目标：验证多个 guc report 参数在 RESET ALL 后是否按照路由默认值重新同步。
 
 （1）客户端连接1执行：
 
 ```sql
-begin;
-SET TimeZone = 'UTC';
-SET session_authorization = current_user;
+SET standard_conforming_strings = off; --  默认值UTF8
+SET IntervalStyle = sql_standard; -- 默认值 postgres
+SET DateStyle = ISO, DMY; --  默认值 ISO, MDY
+set extra_float_digits = 3; -- 默认值1
 SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
--- 检测点1：记录被修改的参数以及后端连接
-commit;
+-- 检测点1：日志中记录所有已修改的参数和值
+DISCARD ALL;
 ```
 
 （2）客户端连接2执行：
@@ -228,20 +234,25 @@ commit;
 begin;
 SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
 -- 检测点2：确认复用步骤(1)的后端连接
-
-DISCARD ALL; -- 检测点3：日志确认Fbase触发缓存清理，同时标记 modified_report_mask=0
-SHOW TimeZone; -- 检测点4：期望恢复为默认值
-SHOW session_authorization; -- 检测点5：期望为原始数据库用户名
--- 保持事务未提交
+-- 检测点3：下数值应全为默认值
+SHOW standard_conforming_strings;
+SHOW IntervalStyle;
+SHOW DateStyle;
+SHOW extra_float_digits;
+-- 保持事务未提交，继续占用后端连接
 ```
 
 （3）客户端连接1再次执行：
 
 ```sql
-begin;
-SHOW TimeZone; -- 检测点6：期望为UTC，确认同步成功
-SHOW session_authorization; -- 检测点7：期望为当前角色
-commit;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点4：应分配新的后端连接
+
+-- 检测点5：下数值应全为默认值
+SHOW standard_conforming_strings;
+SHOW IntervalStyle;
+SHOW DateStyle;
+SHOW extra_float_digits;
 ```
 
 （4）客户端连接2收尾：
@@ -249,8 +260,3 @@ commit;
 ```sql
 commit; -- 释放后端连接
 ```
-
-> **补充要求**：
-> - 各检测点失败时需输出期望值与实际值。
-> - 日志中需明确区分 Simple / Extended 协议，可通过连接URL或控制参数强制协议模式。
-> - 测试结束后使用 `TablePrinter` 输出统一格式的结果表格，名称需与本文档中的“测试用例名称”保持一致。

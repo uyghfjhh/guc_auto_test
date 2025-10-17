@@ -40,28 +40,69 @@ public class GucSyncScenarioTest {
         try {
             // // // 测试非guc report参数同步
             // testCase1_NonReportParameterSync_SimpleProtocol();
+            // checkLastTestResult();
+            // Thread.sleep(1000);
+            
             // testCase1_NonReportParameterSync_ExtendedProtocol();
+            // checkLastTestResult();
+            // Thread.sleep(1000);
             
             // // 测试guc report参数同步
-            // testCase2_DateStyleSync_SimpleProtocol();
-            // testCase2_DateStyleSync_ExtendedProtocol();
+            testCase2_DateStyleSync_SimpleProtocol();
+            checkLastTestResult();
+            Thread.sleep(1000);
+            
+            testCase2_DateStyleSync_ExtendedProtocol();
+            checkLastTestResult();
+            Thread.sleep(1000);
             
             testCase2_TimeZoneReset_SimpleProtocol();
-            // testCase2_TimeZoneReset_ExtendedProtocol();
+            checkLastTestResult();
+            Thread.sleep(1000);
             
-            // testCase4_MultiParamResetAll_SimpleProtocol();
-            // testCase4_MultiParamResetAll_ExtendedProtocol();
+            testCase2_TimeZoneReset_ExtendedProtocol();
+            checkLastTestResult();
+            Thread.sleep(1000);
+
             
-            // testCase5_DiscardAll_SimpleProtocol();
-            // testCase5_DiscardAll_ExtendedProtocol();
+            testCase2b_MultiParamResetAll_SimpleProtocol();
+            checkLastTestResult();
+            Thread.sleep(1000);
+            
+            testCase2b_MultiParamResetAll_ExtendedProtocol();
+            checkLastTestResult();
+            Thread.sleep(1000);
+            
+            // testCase3_MultiParamDiscardAll_SimpleProtocol();
+            checkLastTestResult();
+            Thread.sleep(1000);
             
         } catch (Exception e) {
-            System.err.println("测试执行失败: " + e.getMessage());
+            System.err.println(RED + "\n测试执行失败: " + e.getMessage() + RESET);
             e.printStackTrace();
+        } finally {
+            // 打印测试结果表格
+            TablePrinter.printResults(testResults);
         }
-        
-        // 打印测试结果表格
-        TablePrinter.printResults(testResults);
+    }
+    
+    /**
+     * 检查最后一个测试结果，如果失败则抛出异常停止执行
+     */
+    private void checkLastTestResult() throws Exception {
+        if (!testResults.isEmpty()) {
+            TestResult lastResult = testResults.get(testResults.size() - 1);
+            if (!lastResult.isPassed()) {
+                System.err.println(RED + "\n" + "=".repeat(100));
+                System.err.println("❌ 测试用例 [" + lastResult.getParameter() + "] 失败，停止执行后续测试用例！");
+                System.err.println("测试类别: " + lastResult.getTestCase());
+                System.err.println("期望结果: " + lastResult.getExpectedValue());
+                System.err.println("实际结果: " + lastResult.getActualValue());
+                System.err.println("备注信息: " + lastResult.getRemark());
+                System.err.println("=".repeat(100) + RESET + "\n");
+                throw new Exception("测试用例失败: " + lastResult.getParameter());
+            }
+        }
     }
     
     /**
@@ -280,12 +321,15 @@ public class GucSyncScenarioTest {
         // 如果URL中已有参数，使用&连接，否则使用?
         String separator = baseUrl.contains("?") ? "&" : "?";
         
+        // 添加options参数来固定DateStyle初始值为ISO, MDY
+        String optionsParam = "options=-c%20DateStyle=ISO,%20MDY";
+        
         if (useExtended) {
             // Extended协议：使用extended或extendedForPrepared模式
-            return baseUrl + separator + "preferQueryMode=extended";
+            return baseUrl + separator + "preferQueryMode=extended&" + optionsParam;
         } else {
             // Simple协议：强制使用simple模式
-            return baseUrl + separator + "preferQueryMode=simple";
+            return baseUrl + separator + "preferQueryMode=simple&" + optionsParam;
         }
     }
     
@@ -432,17 +476,28 @@ public class GucSyncScenarioTest {
         StringBuilder failureDetails = new StringBuilder();
         
         try {
-            // 步骤1：客户端连接1执行
-            System.out.println(YELLOW + "步骤1：客户端连接1开始执行..." + RESET);
+            // 步骤1：客户端连接1执行（事务外执行）
+            System.out.println(YELLOW + "步骤1：客户端连接1开始执行（事务外）..." + RESET);
             String url = getUrlWithProtocol(useExtendedProtocol);
             conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
-            conn1.setAutoCommit(false);
-            printSql(1, "BEGIN", protocolName);
+            conn1.setAutoCommit(true); // 事务外执行
             
             // 检测点1：获取初始DateStyle值
             printSql(1, "SHOW DateStyle", protocolName);
             String initialDateStyle = getGucValue(conn1, "DateStyle", useExtendedProtocol);
-            System.out.println(GREEN + "  → 初始DateStyle: " + initialDateStyle + RESET);
+            
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点1】记录初始DateStyle:");
+            System.out.println("  期望: ISO, MDY");
+            System.out.println("  实际: " + initialDateStyle);
+            if (initialDateStyle.contains("ISO") && initialDateStyle.contains("MDY")) {
+                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点1失败(期望:ISO, MDY, 实际:" + initialDateStyle + "); ");
+            }
+            System.out.println("─".repeat(100) + "\n");
             
             // 检测点2：设置DateStyle
             printSql(1, "SET DateStyle = ISO, DMY", protocolName);
@@ -451,11 +506,15 @@ public class GucSyncScenarioTest {
             // 检测点3：记录后端连接信息
             printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend1 = getBackendInfo(conn1, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接1信息: " + backend1 + RESET);
-            System.out.println(BLUE + "  → DateStyle = " + getGucValue(conn1, "DateStyle", useExtendedProtocol) + RESET);
+            String dateStyleAfterSet = getGucValue(conn1, "DateStyle", useExtendedProtocol);
             
-            printSql(1, "COMMIT", protocolName);
-            conn1.commit();
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点3】记录后端连接标识与DateStyle:");
+            System.out.println("  后端连接1: " + backend1);
+            System.out.println("  DateStyle: " + dateStyleAfterSet);
+            System.out.println(GREEN + "  结果: ✓ 通过 - 已记录" + RESET);
+            System.out.println("─".repeat(100) + "\n");
+            
             System.out.println(YELLOW + "步骤1完成\n" + RESET);
             Thread.sleep(100);
             
@@ -465,41 +524,39 @@ public class GucSyncScenarioTest {
             conn2.setAutoCommit(false);
             printSql(2, "BEGIN", protocolName);
             
-            // 检测点1：确认复用后端连接
+            // 检测点4：确认复用后端连接
             printSql(2, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend2 = getBackendInfo(conn2, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接2信息: " + backend2 + RESET);
             
             boolean isReused = backend1.pid.equals(backend2.pid);
             System.out.println("\n" + "─".repeat(100));
-            System.out.println("【检测点1】检查后端连接是否复用:");
-            System.out.println("  期望: 连接2复用连接1的后端连接");
+            System.out.println("【检测点4】确认复用客户端1的后端连接:");
+            System.out.println("  期望: 复用后端连接 (pid相同)");
             System.out.println("  实际: pid1=" + backend1.pid + ", pid2=" + backend2.pid);
             if (isReused) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+                System.out.println(GREEN + "  结果: ✓ 通过 - 后端连接已复用" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - 后端连接未复用" + RESET);
                 allPassed = false;
-                failureDetails.append("检测点1失败; ");
+                failureDetails.append("检测点4失败(pid1=" + backend1.pid + ", pid2=" + backend2.pid + "); ");
             }
             System.out.println("─".repeat(100) + "\n");
             
-            // 检测点2：检查DateStyle是否恢复默认值
+            // 检测点5：检查DateStyle是否恢复默认值
             printSql(2, "SHOW DateStyle", protocolName);
             String dateStyleInConn2 = getGucValue(conn2, "DateStyle", useExtendedProtocol);
-            System.out.println(BLUE + "  → DateStyle = " + dateStyleInConn2 + RESET);
             
             boolean isReset = initialDateStyle.equals(dateStyleInConn2);
             System.out.println("\n" + "─".repeat(100));
-            System.out.println("【检测点2】检查DateStyle是否恢复默认值:");
+            System.out.println("【检测点5】期望返回默认值 ISO, MDY:");
             System.out.println("  期望: " + initialDateStyle);
             System.out.println("  实际: " + dateStyleInConn2);
             if (isReset) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+                System.out.println(GREEN + "  结果: ✓ 通过 - DateStyle已恢复默认值" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - DateStyle未恢复默认值" + RESET);
                 allPassed = false;
-                failureDetails.append("检测点2失败; ");
+                failureDetails.append("检测点5失败(期望:" + initialDateStyle + ", 实际:" + dateStyleInConn2 + "); ");
             }
             System.out.println("─".repeat(100) + "\n");
             System.out.println(YELLOW + "步骤2完成（保持事务未提交）\n" + RESET);
@@ -510,41 +567,39 @@ public class GucSyncScenarioTest {
             conn1.setAutoCommit(false);
             printSql(1, "BEGIN", protocolName);
             
-            // 检测点3：应分配新后端连接
+            // 检测点6：应分配新后端连接
             printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend1New = getBackendInfo(conn1, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接信息: " + backend1New + RESET);
             
             boolean isNewBackend = !backend1.pid.equals(backend1New.pid);
             System.out.println("\n" + "─".repeat(100));
-            System.out.println("【检测点3】检查是否分配新后端连接:");
-            System.out.println("  期望: 分配新后端连接");
+            System.out.println("【检测点6】应分配新的后端连接:");
+            System.out.println("  期望: 分配新后端连接 (pid不同)");
             System.out.println("  实际: 原pid=" + backend1.pid + ", 新pid=" + backend1New.pid);
             if (isNewBackend) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+                System.out.println(GREEN + "  结果: ✓ 通过 - 已分配新后端连接" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - 仍是原后端连接" + RESET);
                 allPassed = false;
-                failureDetails.append("检测点3失败; ");
+                failureDetails.append("检测点6失败(原pid=" + backend1.pid + ", 新pid=" + backend1New.pid + "); ");
             }
             System.out.println("─".repeat(100) + "\n");
             
-            // 检测点4：检查DateStyle是否同步为ISO, DMY
+            // 检测点7：检查DateStyle是否同步为ISO, DMY
             printSql(1, "SHOW DateStyle", protocolName);
             String dateStyleSynced = getGucValue(conn1, "DateStyle", useExtendedProtocol);
-            System.out.println(BLUE + "  → DateStyle = " + dateStyleSynced + RESET);
             
             boolean isSynced = dateStyleSynced.contains("ISO") && dateStyleSynced.contains("DMY");
             System.out.println("\n" + "─".repeat(100));
-            System.out.println("【检测点4】检查DateStyle是否同步:");
+            System.out.println("【检测点7】期望返回 ISO, DMY:");
             System.out.println("  期望: ISO, DMY");
             System.out.println("  实际: " + dateStyleSynced);
             if (isSynced) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+                System.out.println(GREEN + "  结果: ✓ 通过 - DateStyle已同步" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - DateStyle未同步" + RESET);
                 allPassed = false;
-                failureDetails.append("检测点4失败; ");
+                failureDetails.append("检测点7失败(期望:ISO, DMY, 实际:" + dateStyleSynced + "); ");
             }
             System.out.println("─".repeat(100) + "\n");
             
@@ -553,11 +608,29 @@ public class GucSyncScenarioTest {
             System.out.println(YELLOW + "步骤3完成\n" + RESET);
             
             // 步骤4：连接2收尾
+            System.out.println(YELLOW + "步骤4：连接2收尾..." + RESET);
+            
+            // 检测点8：仍应为 ISO, DMY
             printSql(2, "SHOW DateStyle", protocolName);
             String finalDateStyle = getGucValue(conn2, "DateStyle", useExtendedProtocol);
-            System.out.println(BLUE + "  → DateStyle = " + finalDateStyle + RESET);
+            
+            boolean isFinalCorrect = finalDateStyle.contains("ISO") && finalDateStyle.contains("MDY");
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点8】仍应为 ISO, MDY:");
+            System.out.println("  期望: ISO, MDY");
+            System.out.println("  实际: " + finalDateStyle);
+            if (isFinalCorrect) {
+                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点8失败(期望:ISO, MDY, 实际:" + finalDateStyle + "); ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+            
             printSql(2, "COMMIT", protocolName);
             conn2.commit();
+            System.out.println(YELLOW + "步骤4完成\n" + RESET);
             
             recordResult("guc report参数同步", "DateStyle参数（" + protocolName + "）", 
                         "所有检测点通过", allPassed ? "所有检测点通过" : failureDetails.toString(), 
@@ -588,111 +661,124 @@ public class GucSyncScenarioTest {
     private void executeTestCase2_TimeZone(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
         Connection conn1 = null;
         Connection conn2 = null;
-        Connection conn3 = null;
         boolean allPassed = true;
         StringBuilder failureDetails = new StringBuilder();
         
         try {
             String url = getUrlWithProtocol(useExtendedProtocol);
             
-            // 步骤1：客户端连接1执行
-            System.out.println(YELLOW + "步骤1：客户端连接1执行..." + RESET);
+            // ============ 步骤1：客户端连接1执行（事务外SET，才能同步）============
+            System.out.println(YELLOW + "步骤1：客户端连接1执行（事务外SET）..." + RESET);
             conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
-            conn1.setAutoCommit(false);
-            printSql(1, "BEGIN", protocolName);
+            conn1.setAutoCommit(true); // 使用autocommit模式，SET在事务外才能同步
             
             // 检测点1：记录默认值
             printSql(1, "SHOW TimeZone", protocolName);
             String defaultTimeZone = getGucValue(conn1, "TimeZone", useExtendedProtocol);
-            System.out.println(GREEN + "  → 检测点1-默认TimeZone: " + defaultTimeZone + RESET);
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点1】记录默认TimeZone值:");
+            System.out.println("  默认值: " + defaultTimeZone + " (以实际环境为准，如 Asia/Shanghai 或 UTC)");
+            System.out.println("─".repeat(100) + "\n");
             
-            // 检测点2：设置新值
+            // 检测点2：设置新值（事务外执行，可以同步）
             printSql(1, "SET TimeZone = UTC", protocolName);
             executeUpdate(conn1, "SET TimeZone = UTC", useExtendedProtocol);
             
             printSql(1, "SHOW TimeZone", protocolName);
             String timeZoneAfterSet = getGucValue(conn1, "TimeZone", useExtendedProtocol);
-            System.out.println(GREEN + "  → 检测点2-设置后TimeZone: " + timeZoneAfterSet + RESET);
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点2】设置TimeZone=UTC并输出SQL日志:");
+            System.out.println("  设置后TimeZone: " + timeZoneAfterSet);
+            boolean isSetSuccess = "UTC".equals(timeZoneAfterSet);
+            if (isSetSuccess) {
+                System.out.println(GREEN + "  结果: ✓ 设置成功" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 设置失败，期望=UTC, 实际=" + timeZoneAfterSet + RESET);
+                allPassed = false;
+                failureDetails.append("检测点2失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
             
             // 检测点3：记录后端连接标识
             printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend1 = getBackendInfo(conn1, useExtendedProtocol);
-            System.out.println(BLUE + "  → 检测点3-后端连接1: " + backend1 + ", TimeZone=UTC" + RESET);
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点3】记录后端连接标识与TimeZone=UTC:");
+            System.out.println("  后端连接1: " + backend1);
+            System.out.println("  TimeZone: UTC");
+            System.out.println("─".repeat(100) + "\n");
             
-            printSql(1, "COMMIT", protocolName);
-            conn1.commit();
             System.out.println(YELLOW + "步骤1完成\n" + RESET);
             Thread.sleep(100);
             
-            // 步骤2：客户端连接2执行
+            // ============ 步骤2：客户端连接2执行 ============
             System.out.println(YELLOW + "步骤2：客户端连接2执行..." + RESET);
             conn2 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
             conn2.setAutoCommit(false);
             printSql(2, "BEGIN", protocolName);
             
-            // 检测点4：确认复用后端连接
+            // 检测点4：确认复用步骤(1)的后端连接
             printSql(2, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend2 = getBackendInfo(conn2, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接2: " + backend2 + RESET);
             
             boolean isReused = backend1.pid.equals(backend2.pid);
             System.out.println("\n" + "─".repeat(100));
             System.out.println("【检测点4】确认复用步骤(1)的后端连接:");
             System.out.println("  期望: 复用后端连接 (pid相同)");
-            System.out.println("  实际: pid1=" + backend1.pid + ", pid2=" + backend2.pid);
+            System.out.println("  实际: 客户端连接1的后端pid=" + backend1.pid + ", 客户端连接2的后端pid=" + backend2.pid);
             if (isReused) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+                System.out.println(GREEN + "  结果: ✓ 通过 - 后端连接已复用" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - 后端连接未复用" + RESET);
                 allPassed = false;
                 failureDetails.append("检测点4失败; ");
             }
             System.out.println("─".repeat(100) + "\n");
             
-            // 检测点5：期望默认值
+            // 检测点5：期望默认值Asia/Shanghai
             printSql(2, "SHOW TimeZone", protocolName);
             String timeZoneInConn2 = getGucValue(conn2, "TimeZone", useExtendedProtocol);
-            System.out.println(BLUE + "  → TimeZone: " + timeZoneInConn2 + RESET);
             
             boolean isDefaultInConn2 = defaultTimeZone.equals(timeZoneInConn2);
             System.out.println("\n" + "─".repeat(100));
             System.out.println("【检测点5】期望默认值" + defaultTimeZone + ":");
+            System.out.println("  说明: 连接池在发放后端连接前执行了RESET/ParameterStatus");
             System.out.println("  期望: " + defaultTimeZone);
             System.out.println("  实际: " + timeZoneInConn2);
             if (isDefaultInConn2) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+                System.out.println(GREEN + "  结果: ✓ 通过 - TimeZone已恢复默认值" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - TimeZone未恢复默认值" + RESET);
                 allPassed = false;
                 failureDetails.append("检测点5失败; ");
             }
             System.out.println("─".repeat(100) + "\n");
-            System.out.println(YELLOW + "步骤2完成（保持事务未提交）\n" + RESET);
+            System.out.println(YELLOW + "步骤2完成（保持事务未提交，继续占用后端连接）\n" + RESET);
             Thread.sleep(100);
             
-            // 步骤3：客户端连接1再次执行
+            // ============ 步骤3：客户端连接1再次执行 ============
             System.out.println(YELLOW + "步骤3：客户端连接1再次执行..." + RESET);
             conn1.setAutoCommit(false);
             printSql(1, "BEGIN", protocolName);
             
             printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend1New = getBackendInfo(conn1, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接: " + backend1New + RESET);
+            System.out.println(BLUE + "  → 后端连接: " + backend1New + " (应该是新分配的后端连接)" + RESET);
             
-            // 检测点6：期望值依然是UTC
+            // 检测点6：期望值依然是UTC（因为步骤1在事务外SET，会同步到新后端）
             printSql(1, "SHOW TimeZone", protocolName);
             String timeZoneInConn1 = getGucValue(conn1, "TimeZone", useExtendedProtocol);
-            System.out.println(BLUE + "  → TimeZone: " + timeZoneInConn1 + RESET);
             
             boolean isUTC = "UTC".equals(timeZoneInConn1);
             System.out.println("\n" + "─".repeat(100));
             System.out.println("【检测点6】期望值依然是UTC:");
+            System.out.println("  说明: 验证缓存同步逻辑会对新后端执行SET TimeZone=UTC");
             System.out.println("  期望: UTC");
             System.out.println("  实际: " + timeZoneInConn1);
             if (isUTC) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+                System.out.println(GREEN + "  结果: ✓ 通过 - TimeZone已正确同步到新后端" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - TimeZone未正确同步" + RESET);
                 allPassed = false;
                 failureDetails.append("检测点6失败; ");
             }
@@ -701,17 +787,14 @@ public class GucSyncScenarioTest {
             printSql(1, "COMMIT", protocolName);
             conn1.commit();
             
-            // 临时启用autocommit，在事务外执行RESET
+            // 在事务外执行RESET（才能同步）
             conn1.setAutoCommit(true);
-            
-            // 执行RESET TimeZone
             printSql(1, "RESET TimeZone", protocolName);
             executeUpdate(conn1, "RESET TimeZone", useExtendedProtocol);
             
             // 检测点7：恢复默认值
             printSql(1, "SHOW TimeZone", protocolName);
             String timeZoneAfterReset = getGucValue(conn1, "TimeZone", useExtendedProtocol);
-            System.out.println(BLUE + "  → RESET后TimeZone: " + timeZoneAfterReset + RESET);
             
             boolean isResetToDefault = defaultTimeZone.equals(timeZoneAfterReset);
             System.out.println("\n" + "─".repeat(100));
@@ -719,9 +802,9 @@ public class GucSyncScenarioTest {
             System.out.println("  期望: " + defaultTimeZone);
             System.out.println("  实际: " + timeZoneAfterReset);
             if (isResetToDefault) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+                System.out.println(GREEN + "  结果: ✓ 通过 - RESET成功恢复默认值" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - RESET未恢复默认值" + RESET);
                 allPassed = false;
                 failureDetails.append("检测点7失败; ");
             }
@@ -729,58 +812,45 @@ public class GucSyncScenarioTest {
             System.out.println(YELLOW + "步骤3完成\n" + RESET);
             Thread.sleep(100);
             
-            // 步骤4：客户端连接3执行
-            System.out.println(YELLOW + "步骤4：客户端连接3执行..." + RESET);
-            conn3 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
-            conn3.setAutoCommit(false);
-            printSql(3, "BEGIN", protocolName);
-            
-            // 检测点8：确认复用步骤(3)的后端连接
-            printSql(3, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
-            BackendInfo backend3 = getBackendInfo(conn3, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接3: " + backend3 + RESET);
-            
-            boolean isReused3 = backend1New.pid.equals(backend3.pid);
-            System.out.println("\n" + "─".repeat(100));
-            System.out.println("【检测点8】确认复用步骤(3)的后端连接:");
-            System.out.println("  期望: 复用后端连接 (pid相同)");
-            System.out.println("  实际: pid(步骤3)=" + backend1New.pid + ", pid(连接3)=" + backend3.pid);
-            if (isReused3) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
-            } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
-                allPassed = false;
-                failureDetails.append("检测点8失败; ");
-            }
-            System.out.println("─".repeat(100) + "\n");
-            
-            // 检测点9：期望默认值
-            printSql(3, "SHOW TimeZone", protocolName);
-            String timeZoneInConn3 = getGucValue(conn3, "TimeZone", useExtendedProtocol);
-            System.out.println(BLUE + "  → TimeZone: " + timeZoneInConn3 + RESET);
-            
-            boolean isDefaultInConn3 = defaultTimeZone.equals(timeZoneInConn3);
-            System.out.println("\n" + "─".repeat(100));
-            System.out.println("【检测点9】期望默认值" + defaultTimeZone + ":");
-            System.out.println("  期望: " + defaultTimeZone);
-            System.out.println("  实际: " + timeZoneInConn3);
-            if (isDefaultInConn3) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
-            } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
-                allPassed = false;
-                failureDetails.append("检测点9失败; ");
-            }
-            System.out.println("─".repeat(100) + "\n");
-            
-            printSql(3, "COMMIT", protocolName);
-            conn3.commit();
-            System.out.println(YELLOW + "步骤4完成\n" + RESET);
-            
-            // 步骤5：客户端连接2收尾
+            // ============ 步骤4：客户端连接2收尾 ============
+            System.out.println(YELLOW + "步骤4：客户端连接2收尾..." + RESET);
             printSql(2, "COMMIT", protocolName);
             conn2.commit();
-            System.out.println(YELLOW + "步骤5：连接2收尾完成\n" + RESET);
+            System.out.println(YELLOW + "步骤4完成（释放后端连接）\n" + RESET);
+            Thread.sleep(100);
+            
+            // ============ 步骤5：客户端连接1再次执行 ============
+            System.out.println(YELLOW + "步骤5：客户端连接1再次执行..." + RESET);
+            conn1.setAutoCommit(false);
+            printSql(1, "BEGIN", protocolName);
+            
+            // 检测点8：应该复用客户端连接2的后端连接，TimeZone还是默认值
+            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
+            BackendInfo backend1Final = getBackendInfo(conn1, useExtendedProtocol);
+            
+            printSql(1, "SHOW TimeZone", protocolName);
+            String timeZoneFinal = getGucValue(conn1, "TimeZone", useExtendedProtocol);
+            
+            boolean isReusedFromConn2 = backend2.pid.equals(backend1Final.pid);
+            boolean isDefaultFinal = defaultTimeZone.equals(timeZoneFinal);
+            
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点8】应该复用客户端连接2的后端连接，TimeZone还是默认值" + defaultTimeZone + ":");
+            System.out.println("  期望: 复用连接2的后端 (pid=" + backend2.pid + ") 且 TimeZone=" + defaultTimeZone);
+            System.out.println("  实际: 后端pid=" + backend1Final.pid + ", TimeZone=" + timeZoneFinal);
+            if (isReusedFromConn2 && isDefaultFinal) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 后端连接复用正确且TimeZone为默认值" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                allPassed = false;
+                if (!isReusedFromConn2) failureDetails.append("检测点8-后端连接未复用; ");
+                if (!isDefaultFinal) failureDetails.append("检测点8-TimeZone不是默认值; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+            
+            printSql(1, "COMMIT", protocolName);
+            conn1.commit();
+            System.out.println(YELLOW + "步骤5完成\n" + RESET);
             
             recordResult("guc report参数同步", "TimeZone参数——RESET恢复默认值（" + protocolName + "）", 
                         "所有检测点通过", allPassed ? "所有检测点通过" : failureDetails.toString(), 
@@ -789,45 +859,64 @@ public class GucSyncScenarioTest {
         } finally {
             if (conn1 != null) try { conn1.close(); } catch (SQLException e) { e.printStackTrace(); }
             if (conn2 != null) try { conn2.close(); } catch (SQLException e) { e.printStackTrace(); }
-            if (conn3 != null) try { conn3.close(); } catch (SQLException e) { e.printStackTrace(); }
         }
     }
 
-    // ==================== 测试用例4：多参数RESET ALL ====================
+    // ==================== 测试用例2b：多参数同步与 RESET ALL ====================
     
-    public void testCase4_MultiParamResetAll_SimpleProtocol() throws SQLException, InterruptedException {
+    public void testCase2b_MultiParamResetAll_SimpleProtocol() throws SQLException, InterruptedException {
         System.out.println("\n" + "=".repeat(100));
-        System.out.println("【用例4-Simple协议】测试多参数RESET ALL");
+        System.out.println("【用例2b-Simple协议】多参数同步与 RESET ALL");
         System.out.println("=".repeat(100) + "\n");
-        executeTestCase4(false, "Simple协议");
+        executeTestCase2b_MultiParamResetAll(false, "Simple协议");
     }
     
-    public void testCase4_MultiParamResetAll_ExtendedProtocol() throws SQLException, InterruptedException {
+    public void testCase2b_MultiParamResetAll_ExtendedProtocol() throws SQLException, InterruptedException {
         System.out.println("\n" + "=".repeat(100));
-        System.out.println("【用例4-Extended协议】测试多参数RESET ALL");
+        System.out.println("【用例2b-Extended协议】多参数同步与 RESET ALL");
         System.out.println("=".repeat(100) + "\n");
-        executeTestCase4(true, "Extended协议");
+        executeTestCase2b_MultiParamResetAll(true, "Extended协议");
     }
     
-    private void executeTestCase4(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
+    /**
+     * 测试用例2b：多参数同步与 RESET ALL
+     * 目标：验证多个 guc report 参数在 RESET ALL 后是否按照路由默认值重新同步
+     */
+    private void executeTestCase2b_MultiParamResetAll(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
         Connection conn1 = null;
         Connection conn2 = null;
         boolean allPassed = true;
         StringBuilder failureDetails = new StringBuilder();
         
         try {
-            // 步骤1：设置多个参数
-            System.out.println(YELLOW + "步骤1：客户端连接1设置多个参数..." + RESET);
             String url = getUrlWithProtocol(useExtendedProtocol);
+            
+            // ============ 步骤1：客户端连接1执行（事务外SET+RESET ALL）============
+            System.out.println(YELLOW + "步骤1：客户端连接1设置多个参数并执行RESET ALL..." + RESET);
             conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
-            conn1.setAutoCommit(false);
-            printSql(1, "BEGIN", protocolName);
+            conn1.setAutoCommit(true); // 事务外执行，才能同步
             
-            printSql(1, "SET client_encoding = UTF8", protocolName);
-            executeUpdate(conn1, "SET client_encoding = UTF8", useExtendedProtocol);
+            // 记录默认值
+            printSql(1, "SHOW standard_conforming_strings", protocolName);
+            String defaultStandardConformingStrings = getGucValue(conn1, "standard_conforming_strings", useExtendedProtocol);
             
-            printSql(1, "SET standard_conforming_strings = on", protocolName);
-            executeUpdate(conn1, "SET standard_conforming_strings = on", useExtendedProtocol);
+            printSql(1, "SHOW IntervalStyle", protocolName);
+            String defaultIntervalStyle = getGucValue(conn1, "IntervalStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW DateStyle", protocolName);
+            String defaultDateStyle = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String defaultExtraFloatDigits = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            
+            System.out.println(GREEN + "  → 记录默认值: standard_conforming_strings=" + defaultStandardConformingStrings +
+                             ", IntervalStyle=" + defaultIntervalStyle + 
+                             ", DateStyle=" + defaultDateStyle +
+                             ", extra_float_digits=" + defaultExtraFloatDigits + RESET);
+            
+            // 设置多个参数
+            printSql(1, "SET standard_conforming_strings = off", protocolName);
+            executeUpdate(conn1, "SET standard_conforming_strings = off", useExtendedProtocol);
             
             printSql(1, "SET IntervalStyle = sql_standard", protocolName);
             executeUpdate(conn1, "SET IntervalStyle = sql_standard", useExtendedProtocol);
@@ -835,85 +924,170 @@ public class GucSyncScenarioTest {
             printSql(1, "SET DateStyle = ISO, DMY", protocolName);
             executeUpdate(conn1, "SET DateStyle = ISO, DMY", useExtendedProtocol);
             
+            printSql(1, "SET extra_float_digits = 3", protocolName);
+            executeUpdate(conn1, "SET extra_float_digits = 3", useExtendedProtocol);
+            
+            // 检测点1：记录所有已修改的参数和值
             printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend1 = getBackendInfo(conn1, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接1: " + backend1 + RESET);
             
-            printSql(1, "COMMIT", protocolName);
-            conn1.commit();
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点1】日志中记录所有已修改的参数和值:");
+            System.out.println("  后端连接1: " + backend1);
+            
+            printSql(1, "SHOW standard_conforming_strings", protocolName);
+            System.out.println("  standard_conforming_strings: " + getGucValue(conn1, "standard_conforming_strings", useExtendedProtocol));
+            
+            printSql(1, "SHOW IntervalStyle", protocolName);
+            System.out.println("  IntervalStyle: " + getGucValue(conn1, "IntervalStyle", useExtendedProtocol));
+            
+            printSql(1, "SHOW DateStyle", protocolName);
+            System.out.println("  DateStyle: " + getGucValue(conn1, "DateStyle", useExtendedProtocol));
+            
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            System.out.println("  extra_float_digits: " + getGucValue(conn1, "extra_float_digits", useExtendedProtocol));
+            System.out.println("─".repeat(100) + "\n");
+            
+            // 执行RESET ALL
+            printSql(1, "RESET ALL", protocolName);
+            executeUpdate(conn1, "RESET ALL", useExtendedProtocol);
+            
+            // 关闭连接1，让后端连接返回连接池
+            System.out.println(YELLOW + "步骤1完成，关闭连接1，让后端连接返回连接池\n" + RESET);
+            conn1.close();
             Thread.sleep(100);
             
-            // 步骤2：RESET ALL
-            System.out.println(YELLOW + "步骤2：客户端连接2执行RESET ALL..." + RESET);
+            // ============ 步骤2：客户端连接2执行 ============
+            System.out.println(YELLOW + "步骤2：客户端连接2执行..." + RESET);
             conn2 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
             conn2.setAutoCommit(false);
             printSql(2, "BEGIN", protocolName);
             
+            // 检测点2：确认复用步骤(1)的后端连接
             printSql(2, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend2 = getBackendInfo(conn2, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接2: " + backend2 + RESET);
             
-            printSql(2, "RESET ALL", protocolName);
-            executeUpdate(conn2, "RESET ALL", useExtendedProtocol);
-            
-            printSql(2, "SHOW client_encoding", protocolName);
-            String clientEncoding = getGucValue(conn2, "client_encoding", useExtendedProtocol);
-            System.out.println(BLUE + "  → client_encoding: " + clientEncoding + RESET);
-            
-            printSql(2, "SHOW IntervalStyle", protocolName);
-            String intervalStyle = getGucValue(conn2, "IntervalStyle", useExtendedProtocol);
-            System.out.println(BLUE + "  → IntervalStyle: " + intervalStyle + RESET);
-            
-            printSql(2, "SHOW DateStyle", protocolName);
-            String dateStyle = getGucValue(conn2, "DateStyle", useExtendedProtocol);
-            System.out.println(BLUE + "  → DateStyle: " + dateStyle + RESET);
-            
-            Thread.sleep(100);
-            
-            // 步骤3：连接1再次执行，验证同步
-            System.out.println(YELLOW + "步骤3：连接1再次执行，验证参数同步..." + RESET);
-            conn1.setAutoCommit(false);
-            printSql(1, "BEGIN", protocolName);
-            
-            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
-            BackendInfo backend1New = getBackendInfo(conn1, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接: " + backend1New + RESET);
-            
-            printSql(1, "SHOW client_encoding", protocolName);
-            String clientEncodingConn1 = getGucValue(conn1, "client_encoding", useExtendedProtocol);
-            System.out.println(BLUE + "  → client_encoding: " + clientEncodingConn1 + RESET);
-            
-            printSql(1, "SHOW IntervalStyle", protocolName);
-            String intervalStyleConn1 = getGucValue(conn1, "IntervalStyle", useExtendedProtocol);
-            System.out.println(BLUE + "  → IntervalStyle: " + intervalStyleConn1 + RESET);
-            
-            printSql(1, "SHOW DateStyle", protocolName);
-            String dateStyleConn1 = getGucValue(conn1, "DateStyle", useExtendedProtocol);
-            System.out.println(BLUE + "  → DateStyle: " + dateStyleConn1 + RESET);
-            
-            boolean isSynced = intervalStyleConn1.contains("sql_standard") && 
-                              dateStyleConn1.contains("ISO") && dateStyleConn1.contains("DMY");
-            
+            boolean isReused = backend1.pid.equals(backend2.pid);
             System.out.println("\n" + "─".repeat(100));
-            System.out.println("【检测点】多参数是否正确同步:");
-            System.out.println("  期望: IntervalStyle=sql_standard, DateStyle=ISO, DMY");
-            System.out.println("  实际: IntervalStyle=" + intervalStyleConn1 + ", DateStyle=" + dateStyleConn1);
-            if (isSynced) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+            System.out.println("【检测点2】确认复用步骤(1)的后端连接:");
+            System.out.println("  期望: 复用后端连接 (pid相同)");
+            System.out.println("  实际: pid1=" + backend1.pid + ", pid2=" + backend2.pid);
+            if (isReused) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 后端连接已复用" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - 后端连接未复用" + RESET);
                 allPassed = false;
-                failureDetails.append("多参数同步失败; ");
+                failureDetails.append("检测点2失败; ");
             }
             System.out.println("─".repeat(100) + "\n");
             
-            printSql(1, "COMMIT", protocolName);
-            conn1.commit();
+            // 检测点3：下列数值应全为默认值
+            printSql(2, "SHOW standard_conforming_strings", protocolName);
+            String standardConformingStringsConn2 = getGucValue(conn2, "standard_conforming_strings", useExtendedProtocol);
             
+            printSql(2, "SHOW IntervalStyle", protocolName);
+            String intervalStyleConn2 = getGucValue(conn2, "IntervalStyle", useExtendedProtocol);
+            
+            printSql(2, "SHOW DateStyle", protocolName);
+            String dateStyleConn2 = getGucValue(conn2, "DateStyle", useExtendedProtocol);
+            
+            printSql(2, "SHOW extra_float_digits", protocolName);
+            String extraFloatDigitsConn2 = getGucValue(conn2, "extra_float_digits", useExtendedProtocol);
+            
+            boolean allDefault = defaultStandardConformingStrings.equals(standardConformingStringsConn2) &&
+                                defaultIntervalStyle.equals(intervalStyleConn2) &&
+                                defaultDateStyle.equals(dateStyleConn2) &&
+                                defaultExtraFloatDigits.equals(extraFloatDigitsConn2);
+            
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点3】下列数值应全为默认值:");
+            System.out.println("  期望: standard_conforming_strings=" + defaultStandardConformingStrings +
+                             ", IntervalStyle=" + defaultIntervalStyle +
+                             ", DateStyle=" + defaultDateStyle +
+                             ", extra_float_digits=" + defaultExtraFloatDigits);
+            System.out.println("  实际: standard_conforming_strings=" + standardConformingStringsConn2 +
+                             ", IntervalStyle=" + intervalStyleConn2 +
+                             ", DateStyle=" + dateStyleConn2 +
+                             ", extra_float_digits=" + extraFloatDigitsConn2);
+            if (allDefault) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 所有参数已恢复默认值" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 部分参数未恢复默认值" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点3失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+            System.out.println(YELLOW + "步骤2完成（保持事务未提交，继续占用后端连接）\n" + RESET);
+            Thread.sleep(100);
+            
+            // ============ 步骤3：重新创建客户端连接1并执行 ============
+            System.out.println(YELLOW + "步骤3：重新创建客户端连接1并执行..." + RESET);
+            conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
+            conn1.setAutoCommit(true); // 不开启事务
+            
+            // 检测点4：应分配新的后端连接
+            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
+            BackendInfo backend1New = getBackendInfo(conn1, useExtendedProtocol);
+            
+            boolean isNewBackend = !backend1.pid.equals(backend1New.pid);
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点4】应分配新的后端连接:");
+            System.out.println("  期望: 分配新后端连接 (pid不同)");
+            System.out.println("  实际: 原pid=" + backend1.pid + ", 新pid=" + backend1New.pid);
+            if (isNewBackend) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 已分配新后端连接" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 仍是原后端连接" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点4失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+            
+            // 检测点5：下列数值应全为默认值（RESET ALL后）
+            printSql(1, "SHOW standard_conforming_strings", protocolName);
+            String standardConformingStringsConn1 = getGucValue(conn1, "standard_conforming_strings", useExtendedProtocol);
+            
+            printSql(1, "SHOW IntervalStyle", protocolName);
+            String intervalStyleConn1 = getGucValue(conn1, "IntervalStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW DateStyle", protocolName);
+            String dateStyleConn1 = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String extraFloatDigitsConn1 = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            
+            boolean allDefaultConn1 = defaultStandardConformingStrings.equals(standardConformingStringsConn1) &&
+                                     defaultIntervalStyle.equals(intervalStyleConn1) &&
+                                     defaultDateStyle.equals(dateStyleConn1) &&
+                                     defaultExtraFloatDigits.equals(extraFloatDigitsConn1);
+            
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点5】下列数值应全为默认值（RESET ALL后）:");
+            System.out.println("  期望: standard_conforming_strings=" + defaultStandardConformingStrings +
+                             ", IntervalStyle=" + defaultIntervalStyle +
+                             ", DateStyle=" + defaultDateStyle +
+                             ", extra_float_digits=" + defaultExtraFloatDigits);
+            System.out.println("  实际: standard_conforming_strings=" + standardConformingStringsConn1 +
+                             ", IntervalStyle=" + intervalStyleConn1 +
+                             ", DateStyle=" + dateStyleConn1 +
+                             ", extra_float_digits=" + extraFloatDigitsConn1);
+            if (allDefaultConn1) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 所有参数为默认值" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 部分参数不是默认值" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点5失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+            System.out.println(YELLOW + "步骤3完成\n" + RESET);
+            
+            // ============ 步骤4：客户端连接2收尾 ============
+            System.out.println(YELLOW + "步骤4：客户端连接2收尾..." + RESET);
             printSql(2, "COMMIT", protocolName);
             conn2.commit();
+            System.out.println(YELLOW + "步骤4完成（释放后端连接）\n" + RESET);
             
-            recordResult("guc report参数同步", "多参数RESET ALL（" + protocolName + "）", 
+            recordResult("多参数同步与RESET ALL", "多参数同步与RESET ALL（" + protocolName + "）", 
                         "所有检测点通过", allPassed ? "所有检测点通过" : failureDetails.toString(), 
                         allPassed, allPassed ? "通过" : "失败");
                         
@@ -923,96 +1097,226 @@ public class GucSyncScenarioTest {
         }
     }
 
-    // ==================== 测试用例5：DISCARD ALL ====================
+    // ==================== 测试用例3：多参数同步与 DISCARD ALL (仅Simple协议) ====================
     
-    public void testCase5_DiscardAll_SimpleProtocol() throws SQLException, InterruptedException {
+    public void testCase3_MultiParamDiscardAll_SimpleProtocol() throws SQLException, InterruptedException {
         System.out.println("\n" + "=".repeat(100));
-        System.out.println("【用例5-Simple协议】测试DISCARD ALL");
+        System.out.println("【用例3-Simple协议】多参数同步与 DISCARD ALL");
         System.out.println("=".repeat(100) + "\n");
-        executeTestCase5(false, "Simple协议");
+        executeTestCase3_MultiParamDiscardAll(false, "Simple协议");
     }
     
-    public void testCase5_DiscardAll_ExtendedProtocol() throws SQLException, InterruptedException {
-        System.out.println("\n" + "=".repeat(100));
-        System.out.println("【用例5-Extended协议】测试DISCARD ALL");
-        System.out.println("=".repeat(100) + "\n");
-        executeTestCase5(true, "Extended协议");
-    }
-    
-    private void executeTestCase5(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
+    /**
+     * 测试用例3：多参数同步与 DISCARD ALL
+     * 目标：验证多个 guc report 参数在 DISCARD ALL 后是否按照路由默认值重新同步
+     * 注意：仅实现Simple协议版本，因为DISCARD ALL会删除prepared statements，导致Extended协议测试失败
+     */
+    private void executeTestCase3_MultiParamDiscardAll(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
         Connection conn1 = null;
         Connection conn2 = null;
         boolean allPassed = true;
         StringBuilder failureDetails = new StringBuilder();
         
         try {
-            // 步骤1
-            System.out.println(YELLOW + "步骤1：客户端连接1设置参数..." + RESET);
             String url = getUrlWithProtocol(useExtendedProtocol);
+            
+            // ============ 步骤1：客户端连接1执行（事务外SET+DISCARD ALL）============
+            System.out.println(YELLOW + "步骤1：客户端连接1设置多个参数并执行DISCARD ALL..." + RESET);
             conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
-            conn1.setAutoCommit(false);
-            printSql(1, "BEGIN", protocolName);
+            conn1.setAutoCommit(true); // 事务外执行，才能同步
             
-            printSql(1, "SET TimeZone = UTC", protocolName);
-            executeUpdate(conn1, "SET TimeZone = UTC", useExtendedProtocol);
+            // 记录默认值
+            printSql(1, "SHOW standard_conforming_strings", protocolName);
+            String defaultStandardConformingStrings = getGucValue(conn1, "standard_conforming_strings", useExtendedProtocol);
             
+            printSql(1, "SHOW IntervalStyle", protocolName);
+            String defaultIntervalStyle = getGucValue(conn1, "IntervalStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW DateStyle", protocolName);
+            String defaultDateStyle = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String defaultExtraFloatDigits = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            
+            System.out.println(GREEN + "  → 记录默认值: standard_conforming_strings=" + defaultStandardConformingStrings +
+                             ", IntervalStyle=" + defaultIntervalStyle + 
+                             ", DateStyle=" + defaultDateStyle +
+                             ", extra_float_digits=" + defaultExtraFloatDigits + RESET);
+            
+            // 设置多个参数
+            printSql(1, "SET standard_conforming_strings = off", protocolName);
+            executeUpdate(conn1, "SET standard_conforming_strings = off", useExtendedProtocol);
+            
+            printSql(1, "SET IntervalStyle = sql_standard", protocolName);
+            executeUpdate(conn1, "SET IntervalStyle = sql_standard", useExtendedProtocol);
+            
+            printSql(1, "SET DateStyle = ISO, DMY", protocolName);
+            executeUpdate(conn1, "SET DateStyle = ISO, DMY", useExtendedProtocol);
+            
+            printSql(1, "SET extra_float_digits = 3", protocolName);
+            executeUpdate(conn1, "SET extra_float_digits = 3", useExtendedProtocol);
+            
+            // 检测点1：记录所有已修改的参数和值
             printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend1 = getBackendInfo(conn1, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接1: " + backend1 + RESET);
             
-            printSql(1, "COMMIT", protocolName);
-            conn1.commit();
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点1】日志中记录所有已修改的参数和值:");
+            System.out.println("  后端连接1: " + backend1);
+            
+            printSql(1, "SHOW standard_conforming_strings", protocolName);
+            System.out.println("  standard_conforming_strings: " + getGucValue(conn1, "standard_conforming_strings", useExtendedProtocol));
+            
+            printSql(1, "SHOW IntervalStyle", protocolName);
+            System.out.println("  IntervalStyle: " + getGucValue(conn1, "IntervalStyle", useExtendedProtocol));
+            
+            printSql(1, "SHOW DateStyle", protocolName);
+            System.out.println("  DateStyle: " + getGucValue(conn1, "DateStyle", useExtendedProtocol));
+            
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            System.out.println("  extra_float_digits: " + getGucValue(conn1, "extra_float_digits", useExtendedProtocol));
+            System.out.println("─".repeat(100) + "\n");
+            
+            // 执行DISCARD ALL
+            printSql(1, "DISCARD ALL", protocolName);
+            executeUpdate(conn1, "DISCARD ALL", useExtendedProtocol);
+            
+            // 关闭连接1，让后端连接返回连接池
+            System.out.println(YELLOW + "步骤1完成，关闭连接1，让后端连接返回连接池\n" + RESET);
+            conn1.close();
             Thread.sleep(100);
             
-            // 步骤2
-            System.out.println(YELLOW + "步骤2：客户端连接2执行DISCARD ALL..." + RESET);
+            // ============ 步骤2：客户端连接2执行 ============
+            System.out.println(YELLOW + "步骤2：客户端连接2执行..." + RESET);
             conn2 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
             conn2.setAutoCommit(false);
             printSql(2, "BEGIN", protocolName);
             
+            // 检测点2：确认复用步骤(1)的后端连接
             printSql(2, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
             BackendInfo backend2 = getBackendInfo(conn2, useExtendedProtocol);
-            System.out.println(BLUE + "  → 后端连接2: " + backend2 + RESET);
             
-            printSql(2, "DISCARD ALL", protocolName);
-            executeUpdate(conn2, "DISCARD ALL", useExtendedProtocol);
-            
-            printSql(2, "SHOW TimeZone", protocolName);
-            String timeZone = getGucValue(conn2, "TimeZone", useExtendedProtocol);
-            System.out.println(BLUE + "  → TimeZone: " + timeZone + RESET);
-            
-            Thread.sleep(100);
-            
-            // 步骤3
-            System.out.println(YELLOW + "步骤3：连接1再次执行，验证同步..." + RESET);
-            conn1.setAutoCommit(false);
-            printSql(1, "BEGIN", protocolName);
-            
-            printSql(1, "SHOW TimeZone", protocolName);
-            String timeZoneConn1 = getGucValue(conn1, "TimeZone", useExtendedProtocol);
-            System.out.println(BLUE + "  → TimeZone: " + timeZoneConn1 + RESET);
-            
-            boolean isSynced = "UTC".equals(timeZoneConn1);
+            boolean isReused = backend1.pid.equals(backend2.pid);
             System.out.println("\n" + "─".repeat(100));
-            System.out.println("【检测点】DISCARD ALL后参数是否正确同步:");
-            System.out.println("  期望: UTC");
-            System.out.println("  实际: " + timeZoneConn1);
-            if (isSynced) {
-                System.out.println(GREEN + "  结果: ✓ 通过" + RESET);
+            System.out.println("【检测点2】确认复用步骤(1)的后端连接:");
+            System.out.println("  期望: 复用后端连接 (pid相同)");
+            System.out.println("  实际: pid1=" + backend1.pid + ", pid2=" + backend2.pid);
+            if (isReused) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 后端连接已复用" + RESET);
             } else {
-                System.out.println(RED + "  结果: ✗ 失败" + RESET);
+                System.out.println(RED + "  结果: ✗ 失败 - 后端连接未复用" + RESET);
                 allPassed = false;
-                failureDetails.append("DISCARD ALL同步失败; ");
+                failureDetails.append("检测点2失败; ");
             }
             System.out.println("─".repeat(100) + "\n");
             
-            printSql(1, "COMMIT", protocolName);
-            conn1.commit();
+            // 检测点3：下列数值应全为默认值
+            printSql(2, "SHOW standard_conforming_strings", protocolName);
+            String standardConformingStringsConn2 = getGucValue(conn2, "standard_conforming_strings", useExtendedProtocol);
             
+            printSql(2, "SHOW IntervalStyle", protocolName);
+            String intervalStyleConn2 = getGucValue(conn2, "IntervalStyle", useExtendedProtocol);
+            
+            printSql(2, "SHOW DateStyle", protocolName);
+            String dateStyleConn2 = getGucValue(conn2, "DateStyle", useExtendedProtocol);
+            
+            printSql(2, "SHOW extra_float_digits", protocolName);
+            String extraFloatDigitsConn2 = getGucValue(conn2, "extra_float_digits", useExtendedProtocol);
+            
+            boolean allDefault = defaultStandardConformingStrings.equals(standardConformingStringsConn2) &&
+                                defaultIntervalStyle.equals(intervalStyleConn2) &&
+                                defaultDateStyle.equals(dateStyleConn2) &&
+                                defaultExtraFloatDigits.equals(extraFloatDigitsConn2);
+            
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点3】下列数值应全为默认值:");
+            System.out.println("  期望: standard_conforming_strings=" + defaultStandardConformingStrings +
+                             ", IntervalStyle=" + defaultIntervalStyle +
+                             ", DateStyle=" + defaultDateStyle +
+                             ", extra_float_digits=" + defaultExtraFloatDigits);
+            System.out.println("  实际: standard_conforming_strings=" + standardConformingStringsConn2 +
+                             ", IntervalStyle=" + intervalStyleConn2 +
+                             ", DateStyle=" + dateStyleConn2 +
+                             ", extra_float_digits=" + extraFloatDigitsConn2);
+            if (allDefault) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 所有参数已恢复默认值" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 部分参数未恢复默认值" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点3失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+            System.out.println(YELLOW + "步骤2完成（保持事务未提交，继续占用后端连接）\n" + RESET);
+            Thread.sleep(100);
+            
+            // ============ 步骤3：重新创建客户端连接1并执行 ============
+            System.out.println(YELLOW + "步骤3：重新创建客户端连接1并执行..." + RESET);
+            conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
+            conn1.setAutoCommit(true); // 不开启事务
+            
+            // 检测点4：应分配新的后端连接
+            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
+            BackendInfo backend1New = getBackendInfo(conn1, useExtendedProtocol);
+            
+            boolean isNewBackend = !backend1.pid.equals(backend1New.pid);
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点4】应分配新的后端连接:");
+            System.out.println("  期望: 分配新后端连接 (pid不同)");
+            System.out.println("  实际: 原pid=" + backend1.pid + ", 新pid=" + backend1New.pid);
+            if (isNewBackend) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 已分配新后端连接" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 仍是原后端连接" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点4失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+            
+            // 检测点5：下列数值应全为默认值（DISCARD ALL后）
+            printSql(1, "SHOW standard_conforming_strings", protocolName);
+            String standardConformingStringsConn1 = getGucValue(conn1, "standard_conforming_strings", useExtendedProtocol);
+            
+            printSql(1, "SHOW IntervalStyle", protocolName);
+            String intervalStyleConn1 = getGucValue(conn1, "IntervalStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW DateStyle", protocolName);
+            String dateStyleConn1 = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String extraFloatDigitsConn1 = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            
+            boolean allDefaultConn1 = defaultStandardConformingStrings.equals(standardConformingStringsConn1) &&
+                                     defaultIntervalStyle.equals(intervalStyleConn1) &&
+                                     defaultDateStyle.equals(dateStyleConn1) &&
+                                     defaultExtraFloatDigits.equals(extraFloatDigitsConn1);
+            
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点5】下列数值应全为默认值（DISCARD ALL后）:");
+            System.out.println("  期望: standard_conforming_strings=" + defaultStandardConformingStrings +
+                             ", IntervalStyle=" + defaultIntervalStyle +
+                             ", DateStyle=" + defaultDateStyle +
+                             ", extra_float_digits=" + defaultExtraFloatDigits);
+            System.out.println("  实际: standard_conforming_strings=" + standardConformingStringsConn1 +
+                             ", IntervalStyle=" + intervalStyleConn1 +
+                             ", DateStyle=" + dateStyleConn1 +
+                             ", extra_float_digits=" + extraFloatDigitsConn1);
+            if (allDefaultConn1) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 所有参数为默认值" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 部分参数不是默认值" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点5失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+            System.out.println(YELLOW + "步骤3完成\n" + RESET);
+            
+            // ============ 步骤4：客户端连接2收尾 ============
+            System.out.println(YELLOW + "步骤4：客户端连接2收尾..." + RESET);
             printSql(2, "COMMIT", protocolName);
             conn2.commit();
+            System.out.println(YELLOW + "步骤4完成（释放后端连接）\n" + RESET);
             
-            recordResult("guc report参数同步", "DISCARD ALL（" + protocolName + "）", 
+            recordResult("多参数同步与DISCARD ALL", "多参数同步与DISCARD ALL（" + protocolName + "）", 
                         "所有检测点通过", allPassed ? "所有检测点通过" : failureDetails.toString(), 
                         allPassed, allPassed ? "通过" : "失败");
                         
