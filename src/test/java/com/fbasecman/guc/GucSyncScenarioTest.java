@@ -37,70 +37,32 @@ public class GucSyncScenarioTest {
         System.out.println("开始执行GUC参数同步测试场景");
         System.out.println("=".repeat(100) + "\n");
         
-        try {
-            // // // 测试非guc report参数同步
-            // testCase1_NonReportParameterSync_SimpleProtocol();
-            // checkLastTestResult();
-            // Thread.sleep(1000);
-            
-            // testCase1_NonReportParameterSync_ExtendedProtocol();
-            // checkLastTestResult();
-            // Thread.sleep(1000);
-            
-            // // 测试guc report参数同步
-            testCase2_DateStyleSync_SimpleProtocol();
-            checkLastTestResult();
-            Thread.sleep(1000);
-            
-            testCase2_DateStyleSync_ExtendedProtocol();
-            checkLastTestResult();
-            Thread.sleep(1000);
-            
-            testCase2_TimeZoneReset_SimpleProtocol();
-            checkLastTestResult();
-            Thread.sleep(1000);
-            
-            testCase2_TimeZoneReset_ExtendedProtocol();
-            checkLastTestResult();
-            Thread.sleep(1000);
+        for(int i=1; i!=10000; ++i) {
+            try {
+                testCase1_NonReportParameterSync_SimpleProtocol();
+                
+                testCase1_NonReportParameterSync_ExtendedProtocol();
+                
+                testCase2_DateStyleSync_SimpleProtocol();
+                
+                testCase2_DateStyleSync_ExtendedProtocol();
+                
+                testCase2_TimeZoneReset_SimpleProtocol();
+                
+                testCase2_TimeZoneReset_ExtendedProtocol();
 
-            
-            testCase2b_MultiParamResetAll_SimpleProtocol();
-            checkLastTestResult();
-            Thread.sleep(1000);
-            
-            testCase2b_MultiParamResetAll_ExtendedProtocol();
-            checkLastTestResult();
-            Thread.sleep(1000);
-            
-            // testCase3_MultiParamDiscardAll_SimpleProtocol();
-            checkLastTestResult();
-            Thread.sleep(1000);
-            
-        } catch (Exception e) {
-            System.err.println(RED + "\n测试执行失败: " + e.getMessage() + RESET);
-            e.printStackTrace();
-        } finally {
-            // 打印测试结果表格
-            TablePrinter.printResults(testResults);
-        }
-    }
-    
-    /**
-     * 检查最后一个测试结果，如果失败则抛出异常停止执行
-     */
-    private void checkLastTestResult() throws Exception {
-        if (!testResults.isEmpty()) {
-            TestResult lastResult = testResults.get(testResults.size() - 1);
-            if (!lastResult.isPassed()) {
-                System.err.println(RED + "\n" + "=".repeat(100));
-                System.err.println("❌ 测试用例 [" + lastResult.getParameter() + "] 失败，停止执行后续测试用例！");
-                System.err.println("测试类别: " + lastResult.getTestCase());
-                System.err.println("期望结果: " + lastResult.getExpectedValue());
-                System.err.println("实际结果: " + lastResult.getActualValue());
-                System.err.println("备注信息: " + lastResult.getRemark());
-                System.err.println("=".repeat(100) + RESET + "\n");
-                throw new Exception("测试用例失败: " + lastResult.getParameter());
+                testCase2b_MultiParamResetAll_SimpleProtocol();
+                
+                testCase2b_MultiParamResetAll_ExtendedProtocol();
+                
+                // testCase3_MultiParamDiscardAll_SimpleProtocol();
+                
+            } catch (Exception e) {
+                System.err.println(RED + "\n测试执行失败: " + e.getMessage() + RESET);
+                e.printStackTrace();
+            } finally {
+                // 打印测试结果表格
+                TablePrinter.printResults(testResults);
             }
         }
     }
@@ -109,7 +71,7 @@ public class GucSyncScenarioTest {
      * 用例1：测试非guc report参数同步 - Simple Query Protocol
      * 使用Statement执行SQL（Simple协议）
      */
-    public void testCase1_NonReportParameterSync_SimpleProtocol() throws SQLException, InterruptedException {
+    public void testCase1_NonReportParameterSync_SimpleProtocol() throws SQLException, InterruptedException, Exception {
         System.out.println("\n" + "=".repeat(100));
         System.out.println("【用例1-Simple协议】测试非guc report参数同步 (使用Statement - Simple Query Protocol)");
         System.out.println("=".repeat(100) + "\n");
@@ -121,7 +83,7 @@ public class GucSyncScenarioTest {
      * 用例1：测试非guc report参数同步 - Extended Query Protocol
      * 使用PreparedStatement执行SQL（Extended协议）
      */
-    public void testCase1_NonReportParameterSync_ExtendedProtocol() throws SQLException, InterruptedException {
+    public void testCase1_NonReportParameterSync_ExtendedProtocol() throws SQLException, InterruptedException, Exception {
         System.out.println("\n" + "=".repeat(100));
         System.out.println("【用例1-Extended协议】测试非guc report参数同步 (使用PreparedStatement - Extended Query Protocol)");
         System.out.println("=".repeat(100) + "\n");
@@ -134,7 +96,7 @@ public class GucSyncScenarioTest {
      * @param useExtendedProtocol true=使用PreparedStatement(Extended协议), false=使用Statement(Simple协议)
      * @param protocolName 协议名称，用于日志标识
      */
-    private void executeTestCase1(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
+    private void executeTestCase1(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException, Exception {
         
         Connection conn1 = null;
         Connection conn2 = null;
@@ -322,7 +284,7 @@ public class GucSyncScenarioTest {
         String separator = baseUrl.contains("?") ? "&" : "?";
         
         // 添加options参数来固定DateStyle初始值为ISO, MDY
-        String optionsParam = "options=-c%20DateStyle=ISO,%20MDY";
+        String optionsParam = "options=-c%20DateStyle=ISO,MDY";
         
         if (useExtended) {
             // Extended协议：使用extended或extendedForPrepared模式
@@ -424,11 +386,25 @@ public class GucSyncScenarioTest {
     
     /**
      * 记录测试结果
+     * 如果测试失败，立即抛出异常停止执行
      */
     private void recordResult(String testCase, String parameter, 
                              String expected, String actual, 
-                             boolean passed, String remark) {
-        testResults.add(new TestResult(testCase, parameter, expected, actual, passed, remark));
+                             boolean passed, String remark) throws Exception {
+        TestResult result = new TestResult(testCase, parameter, expected, actual, passed, remark);
+        testResults.add(result);
+        
+        // 如果测试失败，立即抛出异常
+        if (!passed) {
+            System.err.println(RED + "\n" + "=".repeat(100));
+            System.err.println("❌ 测试用例 [" + parameter + "] 失败，停止执行后续测试用例！");
+            System.err.println("测试类别: " + testCase);
+            System.err.println("期望结果: " + expected);
+            System.err.println("实际结果: " + actual);
+            System.err.println("备注信息: " + remark);
+            System.err.println("=".repeat(100) + RESET + "\n");
+            throw new Exception("测试用例失败: " + parameter);
+        }
     }
     
     /**
@@ -455,21 +431,21 @@ public class GucSyncScenarioTest {
     
     // ==================== 测试用例2：DateStyle参数同步 ====================
     
-    public void testCase2_DateStyleSync_SimpleProtocol() throws SQLException, InterruptedException {
+    public void testCase2_DateStyleSync_SimpleProtocol() throws SQLException, InterruptedException, Exception {
         System.out.println("\n" + "=".repeat(100));
         System.out.println("【用例2-Simple协议】测试DateStyle参数同步");
         System.out.println("=".repeat(100) + "\n");
         executeTestCase2(false, "Simple协议");
     }
     
-    public void testCase2_DateStyleSync_ExtendedProtocol() throws SQLException, InterruptedException {
+    public void testCase2_DateStyleSync_ExtendedProtocol() throws SQLException, InterruptedException, Exception {
         System.out.println("\n" + "=".repeat(100));
         System.out.println("【用例2-Extended协议】测试DateStyle参数同步");
         System.out.println("=".repeat(100) + "\n");
         executeTestCase2(true, "Extended协议");
     }
     
-    private void executeTestCase2(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
+    private void executeTestCase2(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException, Exception {
         Connection conn1 = null;
         Connection conn2 = null;
         boolean allPassed = true;
@@ -644,21 +620,21 @@ public class GucSyncScenarioTest {
     
     // ==================== 测试用例2：TimeZone参数——RESET 恢复默认值 ====================
     
-    public void testCase2_TimeZoneReset_SimpleProtocol() throws SQLException, InterruptedException {
+    public void testCase2_TimeZoneReset_SimpleProtocol() throws SQLException, InterruptedException, Exception {
         System.out.println("\n" + "=".repeat(100));
         System.out.println("【用例2-Simple协议】测试TimeZone参数——RESET 恢复默认值");
         System.out.println("=".repeat(100) + "\n");
         executeTestCase2_TimeZone(false, "Simple协议");
     }
     
-    public void testCase2_TimeZoneReset_ExtendedProtocol() throws SQLException, InterruptedException {
+    public void testCase2_TimeZoneReset_ExtendedProtocol() throws SQLException, InterruptedException, Exception {
         System.out.println("\n" + "=".repeat(100));
         System.out.println("【用例2-Extended协议】测试TimeZone参数——RESET 恢复默认值");
         System.out.println("=".repeat(100) + "\n");
         executeTestCase2_TimeZone(true, "Extended协议");
     }
     
-    private void executeTestCase2_TimeZone(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
+    private void executeTestCase2_TimeZone(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException, Exception {
         Connection conn1 = null;
         Connection conn2 = null;
         boolean allPassed = true;
@@ -864,14 +840,14 @@ public class GucSyncScenarioTest {
 
     // ==================== 测试用例2b：多参数同步与 RESET ALL ====================
     
-    public void testCase2b_MultiParamResetAll_SimpleProtocol() throws SQLException, InterruptedException {
+    public void testCase2b_MultiParamResetAll_SimpleProtocol() throws SQLException, InterruptedException, Exception {
         System.out.println("\n" + "=".repeat(100));
         System.out.println("【用例2b-Simple协议】多参数同步与 RESET ALL");
         System.out.println("=".repeat(100) + "\n");
         executeTestCase2b_MultiParamResetAll(false, "Simple协议");
     }
     
-    public void testCase2b_MultiParamResetAll_ExtendedProtocol() throws SQLException, InterruptedException {
+    public void testCase2b_MultiParamResetAll_ExtendedProtocol() throws SQLException, InterruptedException, Exception {
         System.out.println("\n" + "=".repeat(100));
         System.out.println("【用例2b-Extended协议】多参数同步与 RESET ALL");
         System.out.println("=".repeat(100) + "\n");
@@ -882,7 +858,7 @@ public class GucSyncScenarioTest {
      * 测试用例2b：多参数同步与 RESET ALL
      * 目标：验证多个 guc report 参数在 RESET ALL 后是否按照路由默认值重新同步
      */
-    private void executeTestCase2b_MultiParamResetAll(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
+    private void executeTestCase2b_MultiParamResetAll(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException, Exception {
         Connection conn1 = null;
         Connection conn2 = null;
         boolean allPassed = true;
@@ -1099,7 +1075,7 @@ public class GucSyncScenarioTest {
 
     // ==================== 测试用例3：多参数同步与 DISCARD ALL (仅Simple协议) ====================
     
-    public void testCase3_MultiParamDiscardAll_SimpleProtocol() throws SQLException, InterruptedException {
+    public void testCase3_MultiParamDiscardAll_SimpleProtocol() throws SQLException, InterruptedException, Exception {
         System.out.println("\n" + "=".repeat(100));
         System.out.println("【用例3-Simple协议】多参数同步与 DISCARD ALL");
         System.out.println("=".repeat(100) + "\n");
@@ -1111,7 +1087,7 @@ public class GucSyncScenarioTest {
      * 目标：验证多个 guc report 参数在 DISCARD ALL 后是否按照路由默认值重新同步
      * 注意：仅实现Simple协议版本，因为DISCARD ALL会删除prepared statements，导致Extended协议测试失败
      */
-    private void executeTestCase3_MultiParamDiscardAll(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException {
+    private void executeTestCase3_MultiParamDiscardAll(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException, Exception {
         Connection conn1 = null;
         Connection conn2 = null;
         boolean allPassed = true;
