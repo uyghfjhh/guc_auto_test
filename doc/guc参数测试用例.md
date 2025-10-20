@@ -61,7 +61,7 @@ end;
 ```sql
 -- 开启事务并记录初始状态
 
-show DateStyle; -- 检测点1：期望值 ISO，日志记录“客户端1-检测点1”
+show DateStyle; -- 检测点1：期望值 ISO, MDY，日志记录“客户端1-检测点1”
 
 -- 修改DateStyle并记录后端连接信息
 SET DateStyle = 'ISO, DMY'; -- 检测点2：日志打印执行SQL（红色），确保使用SET而非ALTER
@@ -260,3 +260,103 @@ SHOW extra_float_digits;
 ```sql
 commit; -- 释放后端连接
 ```
+
+## 2.5 测试类别 ：事务中set guc
+
+目标：测试事务中修改guc参数不会保存到guc缓存，也就不会触发连接前后的guc前后端参数同步
+
+（1）客户端连接1执行：
+
+```sql
+begin;
+SET standard_conforming_strings = off; --  默认值UTF8
+SET IntervalStyle = sql_standard; -- 默认值 postgres
+SET DateStyle = ISO, DMY; --  默认值 ISO, MDY
+set extra_float_digits = 3; -- 默认值1
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点1：日志中记录所有已修改的参数和值
+commit;
+```
+
+（2）客户端连接2执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点2：确认复用步骤(1)的后端连接
+-- 检测点3：下数值因为步骤（1）中修改的值，没同步
+SHOW standard_conforming_strings;
+SHOW IntervalStyle;
+SHOW DateStyle;
+SHOW extra_float_digits;
+-- 保持事务未提交，继续占用后端连接
+```
+
+（3）客户端连接1再次执行：
+
+```sql
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点4：应分配新的后端连接
+
+-- 检测点5：下数值应全为默认值,因为步骤（1）中修改的值，没同步
+SHOW standard_conforming_strings;
+SHOW IntervalStyle;
+SHOW DateStyle;
+SHOW extra_float_digits;
+```
+
+（4）客户端连接2收尾：
+
+```sql
+commit; -- 释放后端连接
+```
+
+
+
+## 2.6测试类别 ：测试大量guc参数同步
+
+目标：测试大量guc参数同步的场景的 是否能处理正确
+
+1）客户端连接1中执行 
+
+```sql
+---设置大量的GUC参数，至少100个，
+SET extra_float_digits = 3; -- 设置extra_float_digits=3，这里假设分配的后端连接1
+....
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+-- 检测点1：记录下设置的guc参数的值
+
+```
+
+ （2）客户端 连接2中执行：
+
+```sql
+begin;
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;-- 检测点2：这里会复用连接1的后端连接
+show extra_float_digits -- 检测点3：这里显示的guc参数的值应该还是为默认值
+....
+```
+
+(3) 连接1继续执
+
+```sql
+begin;
+
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
+--  检测点4: 分配新的后端连接
+show extra_float_digits -- 检测点4： 返回的是之前设置的值，非默认值
+...
+
+end; 
+```
+
+（4）客户端连接2收尾：
+
+```sql
+commit; -- 释放后端连接
+```
+
+
+
+
+
