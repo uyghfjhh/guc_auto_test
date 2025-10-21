@@ -42,7 +42,6 @@ public class GucSyncScenarioTest {
         for(int i=1; i!=2; ++i) {
             try {
                 // testCase1_NonReportParameterSync_SimpleProtocol();
-                
                 // testCase1_NonReportParameterSync_ExtendedProtocol();
                 
                 // testCase2_DateStyleSync_SimpleProtocol();
@@ -55,7 +54,7 @@ public class GucSyncScenarioTest {
 
                 // testCase2b_MultiParamResetAll_SimpleProtocol();
                 
-                // testCase2b_MultiParamResetAll_ExtendedProtocol();
+                testCase2b_MultiParamResetAll_ExtendedProtocol();
                 
                 // testCase3_MultiParamDiscardAll_SimpleProtocol();
                 
@@ -63,9 +62,13 @@ public class GucSyncScenarioTest {
                 
                 // testCase2_5_SetGucInTransaction_ExtendedProtocol();
                 
-                testCase2_6_MassiveGucSync_SimpleProtocol();
+                // testCase2_6_MassiveGucSync_SimpleProtocol();
                 
                 // testCase2_6_MassiveGucSync_ExtendedProtocol();
+                
+                // testCase2_7_MemoryLeakTest_SimpleProtocol();
+                
+                // testCase2_7_MemoryLeakTest_ExtendedProtocol();
                 
             } catch (Exception e) {
                 System.err.println(RED + "\n测试执行失败: " + e.getMessage() + RESET);
@@ -1834,6 +1837,249 @@ public class GucSyncScenarioTest {
             recordResult("测试大量guc参数同步", "测试" + paramCount + "个GUC参数同步（" + protocolName + "）", 
                         "所有检测点通过", allPassed ? "所有检测点通过" : failureDetails.toString(), 
                         allPassed, allPassed ? "通过" : "失败");
+                        
+        } finally {
+            if (conn1 != null) try { conn1.close(); } catch (SQLException e) { e.printStackTrace(); }
+            if (conn2 != null) try { conn2.close(); } catch (SQLException e) { e.printStackTrace(); }
+        }
+    }
+    
+    // ==================== 测试用例2.7：内存泄漏测试 ====================
+    
+    /**
+     * 测试用例2.7：内存泄漏测试 - Simple Query Protocol
+     * 目标：反复执行SET RESET SET RESET ALL，看是否有内存泄漏
+     */
+    public void testCase2_7_MemoryLeakTest_SimpleProtocol() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【用例2.7-Simple协议】内存泄漏测试 - 循环1000次执行SET/RESET操作");
+        System.out.println("=".repeat(100) + "\n");
+        executeTestCase2_7_MemoryLeak(false, "Simple协议");
+    }
+    
+    /**
+     * 测试用例2.7：内存泄漏测试 - Extended Query Protocol
+     * 目标：反复执行SET RESET SET RESET ALL，看是否有内存泄漏
+     */
+    public void testCase2_7_MemoryLeakTest_ExtendedProtocol() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【用例2.7-Extended协议】内存泄漏测试 - 循环1000次执行SET/RESET操作");
+        System.out.println("=".repeat(100) + "\n");
+        executeTestCase2_7_MemoryLeak(true, "Extended协议");
+    }
+    
+    /**
+     * 执行内存泄漏测试 - 严格按照文档2.7要求
+     * 连接1循环1000次执行：SET DateStyle = ISO, DMY; SET extra_float_digits = 3; RESET DateStyle; RESET ALL;
+     * 连接2循环1000次执行：SET DateStyle = ISO, DMY; SET extra_float_digits = 3; RESET ALL;
+     * 无检查点，只执行命令，用于观察内存是否稳定
+     */
+    private void executeTestCase2_7_MemoryLeak(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException, Exception {
+        Connection conn1 = null;
+        Connection conn2 = null;
+        boolean allPassed = true;
+        StringBuilder failureDetails = new StringBuilder();
+        
+        try {
+            String url = getUrlWithProtocol(useExtendedProtocol);
+            
+            // ============ 步骤1：客户端连接1循环执行1000次 ============
+            System.out.println(YELLOW + "步骤1：客户端连接1开始循环执行SET/RESET操作（共1000次）..." + RESET);
+            conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
+            conn1.setAutoCommit(true); // 事务外执行
+            
+            // 获取后端连接信息
+            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
+            BackendInfo backend1 = getBackendInfo(conn1, useExtendedProtocol);
+            System.out.println(BLUE + "  → 后端连接: " + backend1 + RESET);
+            System.out.println(YELLOW + "  → 开始循环执行..." + RESET);
+            
+            long startTime = System.currentTimeMillis();
+            int loopCount = 1000;
+            int errorCount = 0;
+            
+            for (int i = 1; i <= loopCount; i++) {
+                try {
+                    // 严格按照文档2.7要求执行4条命令：
+                    // 1. SET DateStyle = ISO, DMY;
+                    executeUpdate(conn1, "SET DateStyle = ISO, DMY", useExtendedProtocol);
+                    
+                    // 2. SET extra_float_digits = 3;
+                    executeUpdate(conn1, "SET extra_float_digits = 3", useExtendedProtocol);
+                    
+                    // 3. RESET DateStyle;
+                    executeUpdate(conn1, "RESET DateStyle", useExtendedProtocol);
+                    
+                    // 4. RESET ALL;
+                    executeUpdate(conn1, "RESET ALL", useExtendedProtocol);
+                    
+                    // 每100次打印一次进度
+                    if (i % 100 == 0) {
+                        System.out.println(GREEN + "  → 已完成 " + i + "/" + loopCount + " 次循环" + RESET);
+                    }
+                    
+                } catch (SQLException e) {
+                    errorCount++;
+                    System.err.println(RED + "  → 第 " + i + " 次循环出错: " + e.getMessage() + RESET);
+                    if (errorCount > 10) {
+                        // 如果错误超过10次，停止测试
+                        System.err.println(RED + "  → 错误次数过多，停止测试" + RESET);
+                        allPassed = false;
+                        failureDetails.append("循环执行出错次数过多(>" + errorCount + "); ");
+                        break;
+                    }
+                }
+            }
+            
+            long endTime = System.currentTimeMillis();
+            long duration = endTime - startTime;
+            
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【测试总结】内存泄漏测试完成:");
+            System.out.println("  循环次数: " + loopCount);
+            System.out.println("  错误次数: " + errorCount);
+            System.out.println("  执行时间: " + duration + " ms");
+            System.out.println("  平均每次: " + (duration * 1.0 / loopCount) + " ms");
+            
+            if (errorCount == 0) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 所有循环执行成功，无错误" + RESET);
+            } else if (errorCount <= 10) {
+                System.out.println(YELLOW + "  结果: ⚠ 警告 - 有 " + errorCount + " 次执行出错，但在可接受范围内" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 错误次数过多" + RESET);
+                allPassed = false;
+            }
+            System.out.println("  说明: 此测试主要用于观察内存使用情况，需要通过外部工具监控内存");
+            System.out.println("─".repeat(100) + "\n");
+            
+            // 验证连接仍然可用
+            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
+            BackendInfo backendFinal = getBackendInfo(conn1, useExtendedProtocol);
+            
+            boolean sameBackend = backend1.pid.equals(backendFinal.pid);
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【连接验证】验证后端连接是否稳定:");
+            System.out.println("  期望: 使用同一个后端连接 (pid相同)");
+            System.out.println("  实际: 初始pid=" + backend1.pid + ", 最终pid=" + backendFinal.pid);
+            if (sameBackend) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 后端连接稳定" + RESET);
+            } else {
+                System.out.println(YELLOW + "  结果: ⚠ 警告 - 后端连接发生了变化" + RESET);
+            }
+            System.out.println("─".repeat(100) + "\n");
+            
+            System.out.println(YELLOW + "步骤1完成\n" + RESET);
+            
+            // ============ 步骤2：客户端连接2循环执行1000次（命令不同） ============
+            System.out.println(YELLOW + "步骤2：客户端连接2开始循环执行SET/RESET操作（共1000次）..." + RESET);
+            conn2 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
+            conn2.setAutoCommit(true); // 事务外执行
+            
+            // 获取后端连接信息
+            printSql(2, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
+            BackendInfo backend2 = getBackendInfo(conn2, useExtendedProtocol);
+            System.out.println(BLUE + "  → 后端连接2: " + backend2 + RESET);
+            System.out.println(YELLOW + "  → 开始循环执行..." + RESET);
+            
+            long startTime2 = System.currentTimeMillis();
+            int errorCount2 = 0;
+            
+            for (int i = 1; i <= loopCount; i++) {
+                try {
+                    // 连接2执行3条命令（没有RESET DateStyle）：
+                    // 1. SET DateStyle = ISO, DMY;
+                    executeUpdate(conn2, "SET DateStyle = ISO, DMY", useExtendedProtocol);
+                    
+                    // 2. SET extra_float_digits = 3;
+                    executeUpdate(conn2, "SET extra_float_digits = 3", useExtendedProtocol);
+                    
+                    // 3. RESET ALL;
+                    executeUpdate(conn2, "RESET ALL", useExtendedProtocol);
+                    
+                    // 每100次打印一次进度
+                    if (i % 100 == 0) {
+                        System.out.println(GREEN + "  → 已完成 " + i + "/" + loopCount + " 次循环" + RESET);
+                    }
+                    
+                } catch (SQLException e) {
+                    errorCount2++;
+                    System.err.println(RED + "  → 第 " + i + " 次循环出错: " + e.getMessage() + RESET);
+                    if (errorCount2 > 10) {
+                        // 如果错误超过10次，停止测试
+                        System.err.println(RED + "  → 错误次数过多，停止测试" + RESET);
+                        allPassed = false;
+                        failureDetails.append("连接2循环执行出错次数过多(>" + errorCount2 + "); ");
+                        break;
+                    }
+                }
+            }
+            
+            long endTime2 = System.currentTimeMillis();
+            long duration2 = endTime2 - startTime2;
+            
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【测试总结-连接2】内存泄漏测试完成:");
+            System.out.println("  循环次数: " + loopCount);
+            System.out.println("  错误次数: " + errorCount2);
+            System.out.println("  执行时间: " + duration2 + " ms");
+            System.out.println("  平均每次: " + (duration2 * 1.0 / loopCount) + " ms");
+            
+            if (errorCount2 == 0) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 所有循环执行成功，无错误" + RESET);
+            } else if (errorCount2 <= 10) {
+                System.out.println(YELLOW + "  结果: ⚠ 警告 - 有 " + errorCount2 + " 次执行出错，但在可接受范围内" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 错误次数过多" + RESET);
+                allPassed = false;
+            }
+            System.out.println("─".repeat(100) + "\n");
+            
+            // 验证连接2仍然可用
+            printSql(2, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
+            BackendInfo backendFinal2 = getBackendInfo(conn2, useExtendedProtocol);
+            
+            boolean sameBackend2 = backend2.pid.equals(backendFinal2.pid);
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【连接验证-连接2】验证后端连接是否稳定:");
+            System.out.println("  期望: 使用同一个后端连接 (pid相同)");
+            System.out.println("  实际: 初始pid=" + backend2.pid + ", 最终pid=" + backendFinal2.pid);
+            if (sameBackend2) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 后端连接稳定" + RESET);
+            } else {
+                System.out.println(YELLOW + "  结果: ⚠ 警告 - 后端连接发生了变化" + RESET);
+            }
+            System.out.println("─".repeat(100) + "\n");
+            
+            System.out.println(YELLOW + "步骤2完成\n" + RESET);
+            
+            // 记录测试结果
+            String resultDetail = "连接1: 循环=" + loopCount + ", 错误=" + errorCount + ", 时间=" + duration + "ms; " +
+                                "连接2: 循环=" + loopCount + ", 错误=" + errorCount2 + ", 时间=" + duration2 + "ms";
+            recordResult("内存泄漏测试", "2个连接各循环1000次SET/RESET操作（" + protocolName + "）", 
+                        "执行成功，错误次数=0", 
+                        resultDetail, 
+                        allPassed && errorCount == 0 && errorCount2 == 0, 
+                        (allPassed && errorCount == 0 && errorCount2 == 0) ? "通过" : ((errorCount <= 10 && errorCount2 <= 10) ? "警告" : "失败"));
+            
+            // ============ 保持2个连接10分钟，用于观察内存情况 ============
+            System.out.println("\n" + "=".repeat(100));
+            System.out.println(YELLOW + "【内存观察期】保持2个连接打开，休眠10分钟以便观察内存使用情况..." + RESET);
+            System.out.println("  后端连接1: " + backendFinal);
+            System.out.println("  后端连接2: " + backendFinal2);
+            System.out.println("  建议：使用 jmap、jvisualvm 等工具监控 JVM 内存");
+            System.out.println("  建议：在数据库端监控连接的内存占用");
+            System.out.println("  休眠开始时间: " + new java.util.Date());
+            System.out.println("=".repeat(100));
+            
+            for (int i = 1; i <= 10; i++) {
+                Thread.sleep(60000); // 休眠1分钟
+                System.out.println(GREEN + "  → 已等待 " + i + "/10 分钟，连接保持打开状态..." + RESET);
+            }
+            
+            System.out.println("\n" + "=".repeat(100));
+            System.out.println(YELLOW + "【内存观察期结束】休眠结束时间: " + new java.util.Date() + RESET);
+            System.out.println("  即将关闭2个连接（连接1和连接2）...");
+            System.out.println("=".repeat(100) + "\n");
                         
         } finally {
             if (conn1 != null) try { conn1.close(); } catch (SQLException e) { e.printStackTrace(); }

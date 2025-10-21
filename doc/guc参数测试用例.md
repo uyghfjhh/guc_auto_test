@@ -358,5 +358,19 @@ commit; -- 释放后端连接
 
 
 
+## 2.7测试类别 ：内存泄漏测试
+
+目标：反复执行set reset set reset all，看是否有内存泄漏
+
+1）客户端连接1中执行 
+
+```sql
+-- 循环执行1000次，无检查点，只用执行即可
+SET DateStyle = ISO, DMY;
+SET extra_float_digits = 3;
+RESET DateStyle;
+RESET ALL;
+```
+
 
 
