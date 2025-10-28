@@ -10,7 +10,7 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <junit.jupiter.version>5.10.2</junit.jupiter.version>
-        <postgresql.driver.version>42.7.3</postgresql.driver.version>
+        <postgresql.driver.version>42.2.7</postgresql.driver.version>
     </properties>
     <dependencies>
         <dependency>

@@ -369,8 +369,29 @@ commit; -- 释放后端连接
 SET DateStyle = ISO, DMY;
 SET extra_float_digits = 3;
 RESET DateStyle;
+RESET extra_float_digits;
+```
+
+2)客户端连接2中执行：
+
+```sql
+-- 循环执行1000次，无检查点，只用执行即可
+SET DateStyle = ISO, DMY;
+SET extra_float_digits = 3;
 RESET ALL;
 ```
 
 
+
+## 2.8测试类别 ：GUC参数设置报错时，能返回错误信息
+
+目标：验证错误的guc参数，是否能返回错误信息
+1）客户端连接1中执行 
+
+```sql
+SET A=1;
+select 2；  -- 这里会触发guc参数同步，真正的发给后端
+-- 检测点1：
+能收到返回的错误信息
+```
 

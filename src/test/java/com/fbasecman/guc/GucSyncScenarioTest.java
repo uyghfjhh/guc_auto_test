@@ -41,31 +41,37 @@ public class GucSyncScenarioTest {
         
         for(int i=1; i!=2; ++i) {
             try {
-                // testCase1_NonReportParameterSync_SimpleProtocol();
-                // testCase1_NonReportParameterSync_ExtendedProtocol();
+                testCase1_NonReportParameterSync_SimpleProtocol();
+                testCase1_NonReportParameterSync_ExtendedProtocol();
                 
-                // testCase2_DateStyleSync_SimpleProtocol();
+                testCase2_DateStyleSync_SimpleProtocol();
                 
-                // testCase2_DateStyleSync_ExtendedProtocol();
+                testCase2_DateStyleSync_ExtendedProtocol();
                 
-                // testCase2_TimeZoneReset_SimpleProtocol();
+                testCase2_TimeZoneReset_SimpleProtocol();
                 
-                // testCase2_TimeZoneReset_ExtendedProtocol();
+                testCase2_TimeZoneReset_ExtendedProtocol();
 
-                // testCase2b_MultiParamResetAll_SimpleProtocol();
+                testCase2b_MultiParamResetAll_SimpleProtocol();
                 
                 testCase2b_MultiParamResetAll_ExtendedProtocol();
+                                
+                testCase2_5_SetGucInTransaction_SimpleProtocol();
+                
+                testCase2_5_SetGucInTransaction_ExtendedProtocol();
+                
+                testCase2_6_MassiveGucSync_SimpleProtocol();
+                
+                testCase2_6_MassiveGucSync_ExtendedProtocol();
+
+                testCase2_8_InvalidGucError_SimpleProtocol();
+
+                testCase2_8_InvalidGucError_ExtendedProtocol();
+
+                /////////////////////////////////////////////////////
                 
                 // testCase3_MultiParamDiscardAll_SimpleProtocol();
-                
-                // testCase2_5_SetGucInTransaction_SimpleProtocol();
-                
-                // testCase2_5_SetGucInTransaction_ExtendedProtocol();
-                
-                // testCase2_6_MassiveGucSync_SimpleProtocol();
-                
-                // testCase2_6_MassiveGucSync_ExtendedProtocol();
-                
+
                 // testCase2_7_MemoryLeakTest_SimpleProtocol();
                 
                 // testCase2_7_MemoryLeakTest_ExtendedProtocol();
@@ -78,6 +84,17 @@ public class GucSyncScenarioTest {
                 TablePrinter.printResults(testResults);
             }
         }
+    }
+
+    private String summarizeSqlException(SQLException e) {
+        if (e == null) {
+            return "";
+        }
+        String message = e.getMessage();
+        if (message != null) {
+            message = message.replaceAll("\\s+", " ").trim();
+        }
+        return String.format("SQLState=%s, ErrorCode=%d, Message=%s", e.getSQLState(), e.getErrorCode(), message);
     }
     
     /**
@@ -113,6 +130,7 @@ public class GucSyncScenarioTest {
         
         Connection conn1 = null;
         Connection conn2 = null;
+        String url = getUrlWithProtocol(useExtendedProtocol);
         
         // 记录各个检测点的结果
         boolean allPassed = true;
@@ -122,7 +140,7 @@ public class GucSyncScenarioTest {
             // ============ 步骤1：客户端连接1执行 ============
             System.out.println(YELLOW + "步骤1：客户端连接1开始执行..." + RESET);
             conn1 = DriverManager.getConnection(
-                    DatabaseConfig.getUrl(),
+                    url,
                     DatabaseConfig.getUser(),
                     DatabaseConfig.getPassword()
             );
@@ -159,7 +177,7 @@ public class GucSyncScenarioTest {
             // ============ 步骤2：客户端连接2执行 ============
             System.out.println(YELLOW + "步骤2：客户端连接2开始执行..." + RESET);
             conn2 = DriverManager.getConnection(
-                    DatabaseConfig.getUrl(),
+                    url,
                     DatabaseConfig.getUser(),
                     DatabaseConfig.getPassword()
             );
@@ -1844,6 +1862,106 @@ public class GucSyncScenarioTest {
         }
     }
     
+    // ==================== 测试用例2.8：无效GUC参数错误信息 ====================
+
+    public void testCase2_8_InvalidGucError_SimpleProtocol() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【用例2.8-Simple协议】无效GUC参数错误信息测试");
+        System.out.println("=".repeat(100) + "\n");
+        executeTestCase2_8_InvalidGucError(false, "Simple协议");
+    }
+
+    public void testCase2_8_InvalidGucError_ExtendedProtocol() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【用例2.8-Extended协议】无效GUC参数错误信息测试");
+        System.out.println("=".repeat(100) + "\n");
+        executeTestCase2_8_InvalidGucError(true, "Extended协议");
+    }
+
+    /**
+     * 测试用例2.8：无效GUC参数错误信息
+     * 目标：验证设置无效GUC参数时能返回错误信息
+     */
+    private void executeTestCase2_8_InvalidGucError(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException, Exception {
+        Connection conn = null;
+        boolean errorCaptured = false;
+        String errorStage = "";
+        String errorMessage = null;
+        String sqlState = null;
+        int errorCode = 0;
+
+        try {
+            String url = getUrlWithProtocol(useExtendedProtocol);
+            conn = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
+            conn.setAutoCommit(true);
+
+            System.out.println(YELLOW + "步骤1：客户端连接1设置无效的GUC参数..." + RESET);
+            printSql(1, "SET A = 1", protocolName);
+
+            try {
+                executeUpdate(conn, "SET A = 1", useExtendedProtocol);
+                System.out.println(YELLOW + "  → SET命令未立即抛出错误，准备执行后续查询触发同步" + RESET);
+            } catch (SQLException e) {
+                errorCaptured = true;
+                errorStage = "SET";
+                sqlState = e.getSQLState();
+                errorCode = e.getErrorCode();
+                errorMessage = e.getMessage();
+                System.out.println(GREEN + "  → 捕获到错误: " + summarizeSqlException(e) + RESET);
+            }
+
+            if (!errorCaptured) {
+                System.out.println(YELLOW + "步骤2：执行SELECT 2触发GUC同步..." + RESET);
+                printSql(1, "SELECT 2", protocolName);
+                try {
+                    if (useExtendedProtocol) {
+                        try (PreparedStatement pstmt = conn.prepareStatement("SELECT 2")) {
+                            pstmt.executeQuery();
+                        }
+                    } else {
+                        try (Statement stmt = conn.createStatement()) {
+                            stmt.executeQuery("SELECT 2");
+                        }
+                    }
+                    System.out.println(RED + "  → 未捕获到预期错误" + RESET);
+                } catch (SQLException e) {
+                    errorCaptured = true;
+                    errorStage = "SELECT";
+                    sqlState = e.getSQLState();
+                    errorCode = e.getErrorCode();
+                    errorMessage = e.getMessage();
+                    System.out.println(GREEN + "  → 捕获到错误: " + summarizeSqlException(e) + RESET);
+                }
+            }
+
+            boolean passed = errorCaptured && errorMessage != null && !errorMessage.isBlank();
+            String expected = "期望: 无效GUC参数触发错误并返回错误信息";
+            String actual;
+            if (errorCaptured) {
+                String sanitized = errorMessage == null ? "" : errorMessage.replaceAll("\\s+", " ").trim();
+                actual = String.format("阶段=%s, SQLState=%s, ErrorCode=%d, Message=%s", errorStage, sqlState, errorCode, sanitized);
+            } else {
+                actual = "未捕获到任何错误";
+            }
+
+            if (!passed) {
+                System.out.println(RED + "【检测点】未能捕获到错误信息" + RESET);
+            } else {
+                System.out.println(GREEN + "【检测点】已成功捕获错误信息" + RESET);
+            }
+
+            recordResult("GUC参数错误信息", "无效参数错误（" + protocolName + "）", expected, actual, passed, passed ? "通过" : "失败");
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.close();
+                } catch (SQLException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
     // ==================== 测试用例2.7：内存泄漏测试 ====================
     
     /**
