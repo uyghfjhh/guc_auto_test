@@ -41,6 +41,9 @@ public class GucSyncScenarioTest {
         
         for(int i=1; i!=2; ++i) {
             try {
+                 testCase2_5_SetGucInTransaction_SimpleProtocol();
+                
+                testCase2_5_SetGucInTransaction_ExtendedProtocol();
                 testCase1_NonReportParameterSync_SimpleProtocol();
                 testCase1_NonReportParameterSync_ExtendedProtocol();
                 
@@ -63,6 +66,10 @@ public class GucSyncScenarioTest {
                 testCase2_6_MassiveGucSync_SimpleProtocol();
                 
                 testCase2_6_MassiveGucSync_ExtendedProtocol();
+
+                testCase2_8_ReadWriteSwitch_SimpleProtocol();
+
+                testCase2_8_ReadWriteSwitch_ExtendedProtocol();
 
                 testCase2_8_InvalidGucError_SimpleProtocol();
 
@@ -169,10 +176,10 @@ public class GucSyncScenarioTest {
             printSql(1, "COMMIT", protocolName);
             conn1.commit();
             
-            System.out.println(YELLOW + "步骤1完成，保持连接1打开状态\n" + RESET);
+            System.out.println(YELLOW + "步骤1完成，关闭连接1，让后端连接返回连接池\n" + RESET);
             
-            // 等待一小段时间，确保事务提交
-            Thread.sleep(100);
+            // 连接commit之后 连接2增加1秒延时，再建立连接
+            Thread.sleep(1000);
             
             // ============ 步骤2：客户端连接2执行 ============
             System.out.println(YELLOW + "步骤2：客户端连接2开始执行..." + RESET);
@@ -400,6 +407,45 @@ public class GucSyncScenarioTest {
     }
     
     /**
+     * 获取后端连接信息（包含恢复状态）
+     * @param useExtended true=使用PreparedStatement, false=使用Statement
+     */
+    private BackendInfo getBackendInfoWithRecovery(Connection conn, boolean useExtended) throws SQLException {
+        String sql = "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user, pg_is_in_recovery()";
+        
+        if (useExtended) {
+            // Extended Query Protocol - 使用PreparedStatement
+            try (PreparedStatement pstmt = conn.prepareStatement(sql);
+                 ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    return new BackendInfo(
+                        rs.getString(1),  // ip
+                        rs.getInt(2),     // port
+                        rs.getString(3),  // pid
+                        rs.getString(4),  // user
+                        rs.getBoolean(5)  // isInRecovery
+                    );
+                }
+            }
+        } else {
+            // Simple Query Protocol - 使用Statement
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery(sql)) {
+                if (rs.next()) {
+                    return new BackendInfo(
+                        rs.getString(1),  // ip
+                        rs.getInt(2),     // port
+                        rs.getString(3),  // pid
+                        rs.getString(4),  // user
+                        rs.getBoolean(5)  // isInRecovery
+                    );
+                }
+            }
+        }
+        return null;
+    }
+    
+    /**
      * 获取后端连接信息
      * @param useExtended true=使用PreparedStatement, false=使用Statement
      */
@@ -467,17 +513,27 @@ public class GucSyncScenarioTest {
         int port;
         String pid;
         String user;
+        boolean isInRecovery;
         
         BackendInfo(String ip, int port, String pid, String user) {
             this.ip = ip;
             this.port = port;
             this.pid = pid;
             this.user = user;
+            this.isInRecovery = false; // default for backward compatibility
+        }
+        
+        BackendInfo(String ip, int port, String pid, String user, boolean isInRecovery) {
+            this.ip = ip;
+            this.port = port;
+            this.pid = pid;
+            this.user = user;
+            this.isInRecovery = isInRecovery;
         }
         
         @Override
         public String toString() {
-            return String.format("ip=%s, port=%d, pid=%s, user=%s", ip, port, pid, user);
+            return String.format("ip=%s, port=%d, pid=%s, user=%s, isInRecovery=%s", ip, port, pid, user, isInRecovery);
         }
     }
     
@@ -1862,6 +1918,193 @@ public class GucSyncScenarioTest {
         }
     }
     
+    // ==================== 测试用例2.8：测试读写前后换，GUC参数的同步 ====================
+
+    public void testCase2_8_ReadWriteSwitch_SimpleProtocol() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【用例2.8-Simple协议】测试读写前后换，GUC参数的同步");
+        System.out.println("=".repeat(100) + "\n");
+        executeTestCase2_8_ReadWriteSwitch(false, "Simple协议");
+    }
+
+    public void testCase2_8_ReadWriteSwitch_ExtendedProtocol() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【用例2.8-Extended协议】测试读写前后换，GUC参数的同步");
+        System.out.println("=".repeat(100) + "\n");
+        executeTestCase2_8_ReadWriteSwitch(true, "Extended协议");
+    }
+
+    /**
+     * 测试用例2.8：测试读写前后换，GUC参数的同步
+     * 目标：验证读写切换后，GUC参数依然能同步
+     */
+    private void executeTestCase2_8_ReadWriteSwitch(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException, Exception {
+        Connection conn1 = null;
+        boolean allPassed = true;
+        StringBuilder failureDetails = new StringBuilder();
+
+        try {
+            String url = getUrlWithProtocol(useExtendedProtocol);
+            conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
+            conn1.setAutoCommit(true); // 事务外执行
+
+            // ============ 步骤1：首次连接分配的是写节点 ============
+            System.out.println(YELLOW + "步骤1：首次连接分配写节点..." + RESET);
+
+            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user, pg_is_in_recovery()", protocolName);
+            BackendInfo backend1 = getBackendInfoWithRecovery(conn1, useExtendedProtocol);
+            System.out.println(BLUE + "  → 后端连接1信息: " + backend1 + RESET);
+
+            // 检测点1：首次连接分配的是写节点，pg_is_in_recovery = f
+            boolean isWriteNode = !backend1.isInRecovery;
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点1】检查首次连接是否分配到写节点:");
+            System.out.println("  期望: pg_is_in_recovery = false (写节点)");
+            System.out.println("  实际: pg_is_in_recovery = " + backend1.isInRecovery);
+            if (isWriteNode) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 已分配到写节点" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 未分配到写节点" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点1失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+
+            // 记录默认值
+            printSql(1, "SHOW DateStyle", protocolName);
+            String defaultDateStyle = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String defaultExtraFloatDigits = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            printSql(1, "SHOW search_path", protocolName);
+            String defaultSearchPath = getGucValue(conn1, "search_path", useExtendedProtocol);
+
+            System.out.println(GREEN + "  → 记录默认值: DateStyle=" + defaultDateStyle +
+                             ", extra_float_digits=" + defaultExtraFloatDigits +
+                             ", search_path=" + defaultSearchPath + RESET);
+
+            // 设置GUC参数
+            printSql(1, "SET DateStyle = ISO, DMY", protocolName);
+            executeUpdate(conn1, "SET DateStyle = ISO, DMY", useExtendedProtocol);
+
+            printSql(1, "SET extra_float_digits = 2", protocolName);
+            executeUpdate(conn1, "SET extra_float_digits = 2", useExtendedProtocol);
+
+            printSql(1, "SET search_path = 'myschema, public'", protocolName);
+            executeUpdate(conn1, "SET search_path = 'myschema, public'", useExtendedProtocol);
+
+            System.out.println(YELLOW + "步骤1完成\n" + RESET);
+            Thread.sleep(100);
+
+            // ============ 步骤2：切换到读节点 ============
+            System.out.println(YELLOW + "步骤2：切换到读节点..." + RESET);
+
+            printSql(1, "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY", protocolName);
+            executeUpdate(conn1, "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY", useExtendedProtocol);
+
+            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user, pg_is_in_recovery()", protocolName);
+            BackendInfo backend2 = getBackendInfoWithRecovery(conn1, useExtendedProtocol);
+            System.out.println(BLUE + "  → 后端连接信息: " + backend2 + RESET);
+
+            // 检测点2：连接切换，且 pg_is_in_recovery = t 或 port=25432（多活场景下读节点端口为25432）
+            boolean switchedToRead = backend2.isInRecovery || backend2.port == 25432;
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点2】检查是否切换到读节点:");
+            System.out.println("  期望: pg_is_in_recovery = true 或 port = 25432 (读节点)");
+            System.out.println("  实际: pg_is_in_recovery = " + backend2.isInRecovery + ", port = " + backend2.port);
+            if (switchedToRead) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 已切换到读节点" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 未切换到读节点" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点2失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+
+            // 检测点3：检查参数值是否正确同步
+            printSql(1, "SHOW DateStyle", protocolName);
+            String dateStyleAfterSwitch = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String extraFloatDigitsAfterSwitch = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            printSql(1, "SHOW search_path", protocolName);
+            String searchPathAfterSwitch = getGucValue(conn1, "search_path", useExtendedProtocol);
+
+            // 规范化后比较（去除引号差异）
+            boolean paramsCorrect = normalizeGucValue(dateStyleAfterSwitch).equals("ISO, DMY") &&
+                                   normalizeGucValue(extraFloatDigitsAfterSwitch).equals("2") &&
+                                   normalizeGucValue(searchPathAfterSwitch).equals("myschema, public");
+
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点3】检查参数值是否正确同步:");
+            System.out.println("  期望: DateStyle=ISO, DMY, extra_float_digits=2, search_path=myschema, public");
+            System.out.println("  实际: DateStyle=" + dateStyleAfterSwitch +
+                             ", extra_float_digits=" + extraFloatDigitsAfterSwitch +
+                             ", search_path=" + searchPathAfterSwitch);
+            if (paramsCorrect) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 参数已正确同步到读节点" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 参数未正确同步" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点3失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+
+            System.out.println(YELLOW + "步骤2完成\n" + RESET);
+            Thread.sleep(100);
+
+            // ============ 步骤3：RESET ALL并切换回写节点 ============
+            System.out.println(YELLOW + "步骤3：RESET ALL并切换回写节点..." + RESET);
+
+            printSql(1, "RESET ALL", protocolName);
+            executeUpdate(conn1, "RESET ALL", useExtendedProtocol);
+
+            printSql(1, "SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE", protocolName);
+            executeUpdate(conn1, "SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE", useExtendedProtocol);
+
+            // 检测点4：检查参数值是否都恢复默认值
+            printSql(1, "SHOW DateStyle", protocolName);
+            String dateStyleAfterReset = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String extraFloatDigitsAfterReset = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            printSql(1, "SHOW search_path", protocolName);
+            String searchPathAfterReset = getGucValue(conn1, "search_path", useExtendedProtocol);
+
+            // 规范化后比较（去除引号差异）
+            // 注意：extra_float_digits的真正默认值是1，不是记录下来的值（因为JDBC会设置3）
+            boolean paramsReset = normalizeGucValue(dateStyleAfterReset).equals(normalizeGucValue(defaultDateStyle)) &&
+                                 normalizeGucValue(extraFloatDigitsAfterReset).equals("1") &&
+                                 normalizeGucValue(searchPathAfterReset).equals(normalizeGucValue(defaultSearchPath));
+
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点4】检查参数值是否恢复默认值:");
+            System.out.println("  期望: DateStyle=" + defaultDateStyle +
+                             ", extra_float_digits=1" +
+                             ", search_path=" + defaultSearchPath);
+            System.out.println("  实际: DateStyle=" + dateStyleAfterReset +
+                             ", extra_float_digits=" + extraFloatDigitsAfterReset +
+                             ", search_path=" + searchPathAfterReset);
+            if (paramsReset) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 参数已恢复默认值" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 参数未恢复默认值" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点4失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+
+            System.out.println(YELLOW + "步骤3完成\n" + RESET);
+
+            // 记录测试结果
+            recordResult("测试读写前后换，GUC参数的同步", "读写切换GUC同步（" + protocolName + "）",
+                        "所有检测点通过", allPassed ? "所有检测点通过" : failureDetails.toString(),
+                        allPassed, allPassed ? "通过" : "失败");
+
+        } finally {
+            if (conn1 != null) {
+                try { conn1.close(); } catch (SQLException e) { e.printStackTrace(); }
+            }
+        }
+    }
+
     // ==================== 测试用例2.8：无效GUC参数错误信息 ====================
 
     public void testCase2_8_InvalidGucError_SimpleProtocol() throws SQLException, InterruptedException, Exception {

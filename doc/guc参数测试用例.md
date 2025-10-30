@@ -332,7 +332,7 @@ SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;
 
 ```sql
 begin;
-SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user;-- 检测点2：这里会复用连接1的后端连接
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user, pg_is_in_recovery;-- 检测点2：这里会复用连接1的后端连接
 show extra_float_digits -- 检测点3：这里显示的guc参数的值应该还是为默认值
 ....
 ```
@@ -393,5 +393,41 @@ SET A=1;
 select 2；  -- 这里会触发guc参数同步，真正的发给后端
 -- 检测点1：
 能收到返回的错误信息
+```
+
+
+
+# 2.8 测试类别：测试读写前后换，GUC参数的同步
+
+目标：验证读写切换后，GUC参数依然能同步
+
+1）客户端连接1中执行 
+
+```sql
+-- 检查点1：首次连接分配的是写节点，pg_is_in_recovery = f
+SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user, pg_is_in_recovery();
+ Show DateStyle;
+ Show extra_float_digits; -- 这个的默认值写死是1把，因为jdbc会主打发一条 SET extra_float_digits = 3，导致看不到正确的默认值
+ Show search_path;
+ -- 记录下这些值的默认值
+SET DateStyle = ISO, DMY;
+SET extra_float_digits = 2;
+SET search_path = 'myschema, public';
+
+
+ SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY; -- 切换到读节点
+ SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user, pg_is_in_recovery();
+ -- 检测点2：连接切换，且 pg_is_in_recovery = t
+ Show DateStyle;
+ Show extra_float_digits;
+ Show search_path;
+ -- 检测点3：这些值设置正确
+ 
+ RESET ALL;
+ SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE;
+Show DateStyle;
+ Show extra_float_digits; -- 这个的默认值写死是1把
+ Show search_path;
+  -- 检测点4：这些值都应还原成默认值
 ```
 
