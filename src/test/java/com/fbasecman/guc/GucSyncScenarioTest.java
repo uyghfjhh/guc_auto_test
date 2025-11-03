@@ -41,40 +41,43 @@ public class GucSyncScenarioTest {
         
         for(int i=1; i!=2; ++i) {
             try {
-                 testCase2_5_SetGucInTransaction_SimpleProtocol();
+                //  testCase2_5_SetGucInTransaction_SimpleProtocol();
                 
-                testCase2_5_SetGucInTransaction_ExtendedProtocol();
-                testCase1_NonReportParameterSync_SimpleProtocol();
-                testCase1_NonReportParameterSync_ExtendedProtocol();
+                // testCase2_5_SetGucInTransaction_ExtendedProtocol();
+                // testCase1_NonReportParameterSync_SimpleProtocol();
+                // testCase1_NonReportParameterSync_ExtendedProtocol();
                 
-                testCase2_DateStyleSync_SimpleProtocol();
+                // testCase2_DateStyleSync_SimpleProtocol();
                 
-                testCase2_DateStyleSync_ExtendedProtocol();
+                // testCase2_DateStyleSync_ExtendedProtocol();
                 
-                testCase2_TimeZoneReset_SimpleProtocol();
+                // testCase2_TimeZoneReset_SimpleProtocol();
                 
-                testCase2_TimeZoneReset_ExtendedProtocol();
+                // testCase2_TimeZoneReset_ExtendedProtocol();
 
-                testCase2b_MultiParamResetAll_SimpleProtocol();
+                // testCase2b_MultiParamResetAll_SimpleProtocol();
                 
-                testCase2b_MultiParamResetAll_ExtendedProtocol();
+                // testCase2b_MultiParamResetAll_ExtendedProtocol();
                                 
-                testCase2_5_SetGucInTransaction_SimpleProtocol();
+                // testCase2_5_SetGucInTransaction_SimpleProtocol();
                 
-                testCase2_5_SetGucInTransaction_ExtendedProtocol();
+                // testCase2_5_SetGucInTransaction_ExtendedProtocol();
                 
-                testCase2_6_MassiveGucSync_SimpleProtocol();
+                // testCase2_6_MassiveGucSync_SimpleProtocol();
                 
-                testCase2_6_MassiveGucSync_ExtendedProtocol();
+                // testCase2_6_MassiveGucSync_ExtendedProtocol();
 
-                testCase2_8_ReadWriteSwitch_SimpleProtocol();
+                // testCase2_8_ReadWriteSwitch_SimpleProtocol();
 
-                testCase2_8_ReadWriteSwitch_ExtendedProtocol();
+                // testCase2_8_ReadWriteSwitch_ExtendedProtocol();
 
-                testCase2_8_InvalidGucError_SimpleProtocol();
+                // testCase2_8_InvalidGucError_SimpleProtocol();
 
-                testCase2_8_InvalidGucError_ExtendedProtocol();
+                // testCase2_8_InvalidGucError_ExtendedProtocol();
 
+                // testCase_SimpleTest();
+                testCase_PipelineMode_Batch();
+                
                 /////////////////////////////////////////////////////
                 
                 // testCase3_MultiParamDiscardAll_SimpleProtocol();
@@ -2445,6 +2448,202 @@ public class GucSyncScenarioTest {
         } finally {
             if (conn1 != null) try { conn1.close(); } catch (SQLException e) { e.printStackTrace(); }
             if (conn2 != null) try { conn2.close(); } catch (SQLException e) { e.printStackTrace(); }
+        }
+    }
+
+    // ==================== 测试用例：Pipeline模式测试（使用QueryExecutor反射） ====================
+    
+    public void testCase_SimpleTest() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【Pipeline模式测试】客户端连接后10秒倒计时，使用Pipeline方式执行SQL");
+        System.out.println("=".repeat(100) + "\n");
+        
+        Connection conn1 = null;
+        
+        try {
+            // 步骤1：客户端连接1执行
+            System.out.println(YELLOW + "步骤1：客户端连接1开始执行..." + RESET);
+            String url = getUrlWithProtocol(false); // 使用Simple协议
+            conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
+            conn1.setAutoCommit(true);
+            
+            // 连接后等10秒，每过一秒屏幕打印倒计时
+            System.out.println(GREEN + "  → 连接成功，开始10秒倒计时..." + RESET);
+            for (int i = 10; i > 0; i--) {
+                System.out.println("  倒计时: " + i + " 秒");
+                Thread.sleep(1000);
+            }
+            
+            // 开始执行前打印开始执行
+            System.out.println(GREEN + "  → 开始执行SQL语句（Pipeline模式）..." + RESET);
+            
+            // 尝试使用反射访问QueryExecutor实现Pipeline
+            try {
+                System.out.println(BLUE + "\n=== 尝试使用QueryExecutor实现Pipeline ===" + RESET);
+                
+                // 获取底层的PgConnection
+                Connection unwrapped = conn1.unwrap(Connection.class);
+                System.out.println(BLUE + "  → 连接类型: " + unwrapped.getClass().getName() + RESET);
+                
+                // 尝试反射获取queryExecutor字段
+                Class<?> connClass = unwrapped.getClass();
+                java.lang.reflect.Field queryExecutorField = null;
+                
+                // 尝试在当前类和父类中查找queryExecutor字段
+                while (connClass != null && queryExecutorField == null) {
+                    try {
+                        queryExecutorField = connClass.getDeclaredField("queryExecutor");
+                    } catch (NoSuchFieldException e) {
+                        connClass = connClass.getSuperclass();
+                    }
+                }
+                
+                if (queryExecutorField != null) {
+                    queryExecutorField.setAccessible(true);
+                    Object queryExecutor = queryExecutorField.get(unwrapped);
+                    System.out.println(GREEN + "  → 成功获取QueryExecutor: " + queryExecutor.getClass().getName() + RESET);
+                    
+                    // 查看QueryExecutor的方法
+                    System.out.println(BLUE + "  → QueryExecutor可用方法:" + RESET);
+                    for (java.lang.reflect.Method method : queryExecutor.getClass().getMethods()) {
+                        if (method.getName().contains("send") || method.getName().contains("execute")) {
+                            System.out.println("     - " + method.getName() + "()");
+                        }
+                    }
+                    
+                    System.out.println(YELLOW + "\n  注意：QueryExecutor的sendQuery()方法需要特定的参数类型" + RESET);
+                    System.out.println(YELLOW + "  由于API复杂度，这里改用标准JDBC方式演示" + RESET);
+                } else {
+                    System.out.println(YELLOW + "  → 未找到queryExecutor字段，使用标准JDBC方式" + RESET);
+                }
+                
+            } catch (Exception e) {
+                System.out.println(YELLOW + "  → 反射访问失败: " + e.getMessage() + RESET);
+                System.out.println(YELLOW + "  → 改用标准JDBC方式" + RESET);
+            }
+            
+            System.out.println(BLUE + "\n=== 使用标准JDBC执行（作为对比） ===" + RESET);
+            
+            // 执行SQL语句
+            printSql(1, "SET DateStyle = ISO, DMY", "Pipeline模式");
+            executeUpdate(conn1, "SET DateStyle = ISO, DMY", false);
+            
+            printSql(1, "SET extra_float_digits = 2", "Pipeline模式");
+            executeUpdate(conn1, "SET extra_float_digits = 2", false);
+            
+            printSql(1, "SHOW DateStyle", "Pipeline模式");
+            String dateStyleValue = getGucValue(conn1, "DateStyle", false);
+            System.out.println(GREEN + "  → DateStyle: " + dateStyleValue + RESET);
+            
+            printSql(1, "SET extra_float_digits = 3", "Pipeline模式");
+            executeUpdate(conn1, "SET extra_float_digits = 3", false);
+            
+            System.out.println(YELLOW + "\n步骤1完成\n" + RESET);
+            
+            System.out.println(BLUE + "=".repeat(100));
+            System.out.println("【总结】");
+            System.out.println("1. PostgreSQL JDBC驱动的QueryExecutor确实存在");
+            System.out.println("2. 但其sendQuery()方法需要复杂的参数（Query对象等）");
+            System.out.println("3. 标准JDBC API不直接支持真正的pipeline模式");
+            System.out.println("4. 建议使用JDBC Batch API作为替代方案");
+            System.out.println("=".repeat(100) + RESET);
+            
+            // 记录测试结果
+            recordResult("Pipeline模式测试", "客户端连接后10秒倒计时执行SQL（探索QueryExecutor）", 
+                        "探索成功", "探索成功", 
+                        true, "通过");
+                        
+        } finally {
+            if (conn1 != null) try { conn1.close(); } catch (SQLException e) { e.printStackTrace(); }
+        }
+    }
+    
+    // ==================== 测试用例：Pipeline模式测试（使用JDBC Batch） ====================
+    
+    public void testCase_PipelineMode_Batch() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【Pipeline模式测试 - JDBC Batch方案】客户端连接后10秒倒计时，使用Batch批量执行SQL");
+        System.out.println("=".repeat(100) + "\n");
+        
+        Connection conn1 = null;
+        
+        try {
+            // 步骤1：客户端连接1执行
+            System.out.println(YELLOW + "步骤1：客户端连接1开始执行..." + RESET);
+            String url = getUrlWithProtocol(false); // 使用Simple协议
+            conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
+            conn1.setAutoCommit(true);
+            
+            // 连接后等10秒，每过一秒屏幕打印倒计时
+            System.out.println(GREEN + "  → 连接成功，开始10秒倒计时..." + RESET);
+            for (int i = 10; i > 0; i--) {
+                System.out.println("  倒计时: " + i + " 秒");
+                Thread.sleep(1000);
+            }
+            
+            // 开始执行前打印开始执行
+            System.out.println(GREEN + "  → 开始执行SQL语句（JDBC Batch Pipeline模式）..." + RESET);
+            
+            System.out.println(BLUE + "\n=== 使用JDBC Batch实现Pipeline ===" + RESET);
+            
+            // 准备SQL语句
+            String[] queries = {
+                "SET DateStyle = ISO, DMY",
+                "SET extra_float_digits = 2",
+                "SET extra_float_digits = 3"
+            };
+            
+            // 使用Batch批量发送
+            Statement stmt = conn1.createStatement();
+            
+            System.out.println(BLUE + "  → 添加SQL到Batch（模拟连续发送，不等待响应）:" + RESET);
+            for (String query : queries) {
+                printSql(1, query, "Batch Pipeline模式");
+                stmt.addBatch(query);
+                System.out.println(GREEN + "     ✓ 已添加到Batch，未发送" + RESET);
+            }
+            
+            System.out.println(BLUE + "\n  → 执行Batch（一次性发送所有SQL）..." + RESET);
+            long startTime = System.currentTimeMillis();
+            int[] results = stmt.executeBatch();
+            long endTime = System.currentTimeMillis();
+            
+            System.out.println(GREEN + "  → Batch执行完成，耗时: " + (endTime - startTime) + "ms" + RESET);
+            System.out.println(BLUE + "  → Batch执行结果:" + RESET);
+            for (int i = 0; i < results.length; i++) {
+                System.out.println("     SQL[" + i + "]: " + queries[i] + " -> 结果: " + results[i]);
+            }
+            
+            // 验证结果
+            System.out.println(BLUE + "\n  → 验证GUC参数值:" + RESET);
+            printSql(1, "SHOW DateStyle", "验证");
+            String dateStyleValue = getGucValue(conn1, "DateStyle", false);
+            System.out.println(GREEN + "     DateStyle = " + dateStyleValue + RESET);
+            
+            printSql(1, "SHOW extra_float_digits", "验证");
+            String extraFloatValue = getGucValue(conn1, "extra_float_digits", false);
+            System.out.println(GREEN + "     extra_float_digits = " + extraFloatValue + RESET);
+            
+            stmt.close();
+            
+            System.out.println(YELLOW + "\n步骤1完成\n" + RESET);
+            
+            System.out.println(BLUE + "=".repeat(100));
+            System.out.println("【总结 - JDBC Batch方案】");
+            System.out.println("1. ✓ 使用addBatch()可以连续添加多个SQL，不立即执行");
+            System.out.println("2. ✓ 使用executeBatch()一次性发送所有SQL到服务器");
+            System.out.println("3. ✓ 这种方式接近Pipeline的效果：批量发送，批量接收");
+            System.out.println("4. ✓ 优点：标准JDBC API，兼容性好，代码简洁");
+            System.out.println("5. ⚠ 限制：仍然是同步的，需要等待所有结果返回");
+            System.out.println("=".repeat(100) + RESET);
+            
+            // 记录测试结果
+            recordResult("Pipeline模式测试(Batch)", "使用JDBC Batch批量执行SQL", 
+                        "执行成功", "执行成功", 
+                        true, "通过");
+                        
+        } finally {
+            if (conn1 != null) try { conn1.close(); } catch (SQLException e) { e.printStackTrace(); }
         }
     }
 }

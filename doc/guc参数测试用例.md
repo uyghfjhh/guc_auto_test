@@ -431,3 +431,17 @@ Show DateStyle;
   -- 检测点4：这些值都应还原成默认值
 ```
 
+
+# 2.8 测试类别：简单测试用例
+
+客户端连接上之后，等10秒在执行下面的语句，没过一秒屏幕打印倒计时，开始执行前也打印开始执行
+1）客户端连接1中执行 
+
+```sql
+-- 无检点 
+
+SET DateStyle = ISO, DMY;
+SET extra_float_digits = 2;
+show DateStyle；
+
+ ---
