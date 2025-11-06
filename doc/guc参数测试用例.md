@@ -432,7 +432,7 @@ Show DateStyle;
 ```
 
 
-# 2.8 测试类别：简单测试用例
+# 2.9 测试类别：简单测试用例
 
 客户端连接上之后，等10秒在执行下面的语句，没过一秒屏幕打印倒计时，开始执行前也打印开始执行
 1）客户端连接1中执行 
@@ -445,3 +445,17 @@ SET extra_float_digits = 2;
 show DateStyle；
 
  ---
+
+ ## 2.10 测试常用guc参数读写切换
+
+目标：验证读写切换后，GUC参数依然能同步
+
+测试步骤完全参考 2.8 测试类别：测试读写前后换，GUC参数的同步
+guc参数如下：
+1GUC Report 参数	default_transaction_read_only, standard_conforming_strings, client_encoding, DateStyle, session_authorization, TimeZone, application_name, IntervalStyle
+内存调优	work_mem, maintenance_work_mem, temp_buffers, logical_decoding_work_mem
+超时控制	statement_timeout, lock_timeout, idle_in_transaction_session_timeout
+事务控制	transaction_isolation, transaction_read_only
+模式解析	search_path
+输出格式	extra_float_digits, bytea_output, xmloption
+调试/开发	enable_seqscan

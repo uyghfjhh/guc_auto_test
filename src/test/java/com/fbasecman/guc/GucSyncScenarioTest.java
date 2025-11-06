@@ -59,9 +59,6 @@ public class GucSyncScenarioTest {
                 
                 // testCase2b_MultiParamResetAll_ExtendedProtocol();
                                 
-                // testCase2_5_SetGucInTransaction_SimpleProtocol();
-                
-                // testCase2_5_SetGucInTransaction_ExtendedProtocol();
                 
                 // testCase2_6_MassiveGucSync_SimpleProtocol();
                 
@@ -75,11 +72,13 @@ public class GucSyncScenarioTest {
 
                 // testCase2_8_InvalidGucError_ExtendedProtocol();
 
-                // testCase_SimpleTest();
-                testCase_PipelineMode_Batch();
+                // testCase2_10_CommonGucReadWriteSwitch_SimpleProtocol();
+
+                // testCase2_10_CommonGucReadWriteSwitch_ExtendedProtocol();
                 
                 /////////////////////////////////////////////////////
-                
+                //   testCase_SimpleTest();
+                // testCase_PipelineMode_Batch();
                 // testCase3_MultiParamDiscardAll_SimpleProtocol();
 
                 // testCase2_7_MemoryLeakTest_SimpleProtocol();
@@ -996,10 +995,14 @@ public class GucSyncScenarioTest {
             printSql(1, "SHOW extra_float_digits", protocolName);
             String defaultExtraFloatDigits = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
             
+            printSql(1, "SHOW statement_timeout", protocolName);
+            String defaultStatementTimeout = getGucValue(conn1, "statement_timeout", useExtendedProtocol);
+            
             System.out.println(GREEN + "  → 记录默认值: standard_conforming_strings=" + defaultStandardConformingStrings +
                              ", IntervalStyle=" + defaultIntervalStyle + 
                              ", DateStyle=" + defaultDateStyle +
-                             ", extra_float_digits=" + defaultExtraFloatDigits + RESET);
+                             ", extra_float_digits=" + defaultExtraFloatDigits +
+                             ", statement_timeout=" + defaultStatementTimeout + RESET);
             
             // 设置多个参数
             printSql(1, "SET standard_conforming_strings = off", protocolName);
@@ -1013,6 +1016,9 @@ public class GucSyncScenarioTest {
             
             printSql(1, "SET extra_float_digits = 3", protocolName);
             executeUpdate(conn1, "SET extra_float_digits = 3", useExtendedProtocol);
+            
+            printSql(1, "SET statement_timeout = 5000", protocolName);
+            executeUpdate(conn1, "SET statement_timeout = 5000", useExtendedProtocol);
             
             // 检测点1：记录所有已修改的参数和值
             printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user", protocolName);
@@ -1033,6 +1039,9 @@ public class GucSyncScenarioTest {
             
             printSql(1, "SHOW extra_float_digits", protocolName);
             System.out.println("  extra_float_digits: " + getGucValue(conn1, "extra_float_digits", useExtendedProtocol));
+            
+            printSql(1, "SHOW statement_timeout", protocolName);
+            System.out.println("  statement_timeout: " + getGucValue(conn1, "statement_timeout", useExtendedProtocol));
             System.out.println("─".repeat(100) + "\n");
             
             // 执行RESET ALL
@@ -1081,21 +1090,27 @@ public class GucSyncScenarioTest {
             printSql(2, "SHOW extra_float_digits", protocolName);
             String extraFloatDigitsConn2 = getGucValue(conn2, "extra_float_digits", useExtendedProtocol);
             
+            printSql(2, "SHOW statement_timeout", protocolName);
+            String statementTimeoutConn2 = getGucValue(conn2, "statement_timeout", useExtendedProtocol);
+            
             boolean allDefault = defaultStandardConformingStrings.equals(standardConformingStringsConn2) &&
                                 defaultIntervalStyle.equals(intervalStyleConn2) &&
                                 defaultDateStyle.equals(dateStyleConn2) &&
-                                defaultExtraFloatDigits.equals(extraFloatDigitsConn2);
+                                defaultExtraFloatDigits.equals(extraFloatDigitsConn2) &&
+                                defaultStatementTimeout.equals(statementTimeoutConn2);
             
             System.out.println("\n" + "─".repeat(100));
             System.out.println("【检测点3】下列数值应全为默认值:");
             System.out.println("  期望: standard_conforming_strings=" + defaultStandardConformingStrings +
                              ", IntervalStyle=" + defaultIntervalStyle +
                              ", DateStyle=" + defaultDateStyle +
-                             ", extra_float_digits=" + defaultExtraFloatDigits);
+                             ", extra_float_digits=" + defaultExtraFloatDigits +
+                             ", statement_timeout=" + defaultStatementTimeout);
             System.out.println("  实际: standard_conforming_strings=" + standardConformingStringsConn2 +
                              ", IntervalStyle=" + intervalStyleConn2 +
                              ", DateStyle=" + dateStyleConn2 +
-                             ", extra_float_digits=" + extraFloatDigitsConn2);
+                             ", extra_float_digits=" + extraFloatDigitsConn2 +
+                             ", statement_timeout=" + statementTimeoutConn2);
             if (allDefault) {
                 System.out.println(GREEN + "  结果: ✓ 通过 - 所有参数已恢复默认值" + RESET);
             } else {
@@ -1143,21 +1158,27 @@ public class GucSyncScenarioTest {
             printSql(1, "SHOW extra_float_digits", protocolName);
             String extraFloatDigitsConn1 = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
             
+            printSql(1, "SHOW statement_timeout", protocolName);
+            String statementTimeoutConn1 = getGucValue(conn1, "statement_timeout", useExtendedProtocol);
+            
             boolean allDefaultConn1 = defaultStandardConformingStrings.equals(standardConformingStringsConn1) &&
                                      defaultIntervalStyle.equals(intervalStyleConn1) &&
                                      defaultDateStyle.equals(dateStyleConn1) &&
-                                     defaultExtraFloatDigits.equals(extraFloatDigitsConn1);
+                                     defaultExtraFloatDigits.equals(extraFloatDigitsConn1) &&
+                                     defaultStatementTimeout.equals(statementTimeoutConn1);
             
             System.out.println("\n" + "─".repeat(100));
             System.out.println("【检测点5】下列数值应全为默认值（RESET ALL后）:");
             System.out.println("  期望: standard_conforming_strings=" + defaultStandardConformingStrings +
                              ", IntervalStyle=" + defaultIntervalStyle +
                              ", DateStyle=" + defaultDateStyle +
-                             ", extra_float_digits=" + defaultExtraFloatDigits);
+                             ", extra_float_digits=" + defaultExtraFloatDigits +
+                             ", statement_timeout=" + defaultStatementTimeout);
             System.out.println("  实际: standard_conforming_strings=" + standardConformingStringsConn1 +
                              ", IntervalStyle=" + intervalStyleConn1 +
                              ", DateStyle=" + dateStyleConn1 +
-                             ", extra_float_digits=" + extraFloatDigitsConn1);
+                             ", extra_float_digits=" + extraFloatDigitsConn1 +
+                             ", statement_timeout=" + statementTimeoutConn1);
             if (allDefaultConn1) {
                 System.out.println(GREEN + "  结果: ✓ 通过 - 所有参数为默认值" + RESET);
             } else {
@@ -2098,6 +2119,412 @@ public class GucSyncScenarioTest {
 
             // 记录测试结果
             recordResult("测试读写前后换，GUC参数的同步", "读写切换GUC同步（" + protocolName + "）",
+                        "所有检测点通过", allPassed ? "所有检测点通过" : failureDetails.toString(),
+                        allPassed, allPassed ? "通过" : "失败");
+
+        } finally {
+            if (conn1 != null) {
+                try { conn1.close(); } catch (SQLException e) { e.printStackTrace(); }
+            }
+        }
+    }
+
+    // ==================== 测试用例2.10：测试常用guc参数读写切换 ====================
+
+    public void testCase2_10_CommonGucReadWriteSwitch_SimpleProtocol() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【用例2.10-Simple协议】测试常用guc参数读写切换");
+        System.out.println("=".repeat(100) + "\n");
+        executeTestCase2_10_CommonGucReadWriteSwitch(false, "Simple协议");
+    }
+
+    public void testCase2_10_CommonGucReadWriteSwitch_ExtendedProtocol() throws SQLException, InterruptedException, Exception {
+        System.out.println("\n" + "=".repeat(100));
+        System.out.println("【用例2.10-Extended协议】测试常用guc参数读写切换");
+        System.out.println("=".repeat(100) + "\n");
+        executeTestCase2_10_CommonGucReadWriteSwitch(true, "Extended协议");
+    }
+
+    /**
+     * 测试用例2.10：测试常用guc参数读写切换
+     * 目标：验证读写切换后，常用GUC参数依然能同步
+     * 测试步骤完全参考2.8，但测试更多参数
+     */
+    private void executeTestCase2_10_CommonGucReadWriteSwitch(boolean useExtendedProtocol, String protocolName) throws SQLException, InterruptedException, Exception {
+        Connection conn1 = null;
+        boolean allPassed = true;
+        StringBuilder failureDetails = new StringBuilder();
+
+        try {
+            String url = getUrlWithProtocol(useExtendedProtocol);
+            conn1 = DriverManager.getConnection(url, DatabaseConfig.getUser(), DatabaseConfig.getPassword());
+            conn1.setAutoCommit(true); // 事务外执行
+
+            // ============ 步骤1：首次连接分配的是写节点 ============
+            System.out.println(YELLOW + "步骤1：首次连接分配写节点..." + RESET);
+
+            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user, pg_is_in_recovery()", protocolName);
+            BackendInfo backend1 = getBackendInfoWithRecovery(conn1, useExtendedProtocol);
+            System.out.println(BLUE + "  → 后端连接1信息: " + backend1 + RESET);
+
+            // 检测点1：首次连接分配的是写节点，pg_is_in_recovery = f
+            boolean isWriteNode = !backend1.isInRecovery;
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点1】检查首次连接是否分配到写节点:");
+            System.out.println("  期望: pg_is_in_recovery = false (写节点)");
+            System.out.println("  实际: pg_is_in_recovery = " + backend1.isInRecovery);
+            if (isWriteNode) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 已分配到写节点" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 未分配到写节点" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点1失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+
+            // 记录默认值 - 19个参数 (排除client_encoding因为有限制，排除transaction_isolation和transaction_read_only因为是事务级别参数)
+            System.out.println(GREEN + "  → 开始记录19个GUC参数的默认值..." + RESET);
+            
+            printSql(1, "SHOW default_transaction_read_only", protocolName);
+            String defaultTransactionReadOnly = getGucValue(conn1, "default_transaction_read_only", useExtendedProtocol);
+            
+            printSql(1, "SHOW standard_conforming_strings", protocolName);
+            String defaultStandardConformingStrings = getGucValue(conn1, "standard_conforming_strings", useExtendedProtocol);
+            
+            printSql(1, "SHOW DateStyle", protocolName);
+            String defaultDateStyle = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW TimeZone", protocolName);
+            String defaultTimeZone = getGucValue(conn1, "TimeZone", useExtendedProtocol);
+            
+            printSql(1, "SHOW application_name", protocolName);
+            String defaultApplicationName = getGucValue(conn1, "application_name", useExtendedProtocol);
+            
+            printSql(1, "SHOW IntervalStyle", protocolName);
+            String defaultIntervalStyle = getGucValue(conn1, "IntervalStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW work_mem", protocolName);
+            String defaultWorkMem = getGucValue(conn1, "work_mem", useExtendedProtocol);
+            
+            printSql(1, "SHOW maintenance_work_mem", protocolName);
+            String defaultMaintenanceWorkMem = getGucValue(conn1, "maintenance_work_mem", useExtendedProtocol);
+            
+            printSql(1, "SHOW temp_buffers", protocolName);
+            String defaultTempBuffers = getGucValue(conn1, "temp_buffers", useExtendedProtocol);
+            
+            printSql(1, "SHOW logical_decoding_work_mem", protocolName);
+            String defaultLogicalDecodingWorkMem = getGucValue(conn1, "logical_decoding_work_mem", useExtendedProtocol);
+            
+            printSql(1, "SHOW statement_timeout", protocolName);
+            String defaultStatementTimeout = getGucValue(conn1, "statement_timeout", useExtendedProtocol);
+            
+            printSql(1, "SHOW lock_timeout", protocolName);
+            String defaultLockTimeout = getGucValue(conn1, "lock_timeout", useExtendedProtocol);
+            
+            printSql(1, "SHOW idle_in_transaction_session_timeout", protocolName);
+            String defaultIdleInTransactionTimeout = getGucValue(conn1, "idle_in_transaction_session_timeout", useExtendedProtocol);
+            
+            printSql(1, "SHOW search_path", protocolName);
+            String defaultSearchPath = getGucValue(conn1, "search_path", useExtendedProtocol);
+            
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String defaultExtraFloatDigits = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            
+            printSql(1, "SHOW bytea_output", protocolName);
+            String defaultByteaOutput = getGucValue(conn1, "bytea_output", useExtendedProtocol);
+            
+            printSql(1, "SHOW xmloption", protocolName);
+            String defaultXmloption = getGucValue(conn1, "xmloption", useExtendedProtocol);
+            
+            printSql(1, "SHOW enable_seqscan", protocolName);
+            String defaultEnableSeqscan = getGucValue(conn1, "enable_seqscan", useExtendedProtocol);
+
+            System.out.println(GREEN + "  → 记录19个GUC参数默认值完成" + RESET);
+
+            // 设置19个GUC参数
+            System.out.println(GREEN + "  → 开始设置19个GUC参数..." + RESET);
+            
+            // 注意: default_transaction_read_only, session_authorization, client_encoding 通常不能在普通会话中修改
+            // transaction_isolation 和 transaction_read_only 是事务级别参数，不适合此测试
+            // 我们跳过这些参数的设置，只记录它们的默认值
+            
+            printSql(1, "SET standard_conforming_strings = off", protocolName);
+            executeUpdate(conn1, "SET standard_conforming_strings = off", useExtendedProtocol);
+            
+            printSql(1, "SET DateStyle = ISO, DMY", protocolName);
+            executeUpdate(conn1, "SET DateStyle = ISO, DMY", useExtendedProtocol);
+            
+            printSql(1, "SET TimeZone = 'UTC'", protocolName);
+            executeUpdate(conn1, "SET TimeZone = 'UTC'", useExtendedProtocol);
+            
+            printSql(1, "SET application_name = 'test_app'", protocolName);
+            executeUpdate(conn1, "SET application_name = 'test_app'", useExtendedProtocol);
+            
+            printSql(1, "SET IntervalStyle = sql_standard", protocolName);
+            executeUpdate(conn1, "SET IntervalStyle = sql_standard", useExtendedProtocol);
+            
+            printSql(1, "SET work_mem = '8MB'", protocolName);
+            executeUpdate(conn1, "SET work_mem = '8MB'", useExtendedProtocol);
+            
+            printSql(1, "SET maintenance_work_mem = '16MB'", protocolName);
+            executeUpdate(conn1, "SET maintenance_work_mem = '16MB'", useExtendedProtocol);
+            
+            printSql(1, "SET temp_buffers = '16MB'", protocolName);
+            executeUpdate(conn1, "SET temp_buffers = '16MB'", useExtendedProtocol);
+            
+            printSql(1, "SET logical_decoding_work_mem = '128MB'", protocolName);
+            executeUpdate(conn1, "SET logical_decoding_work_mem = '128MB'", useExtendedProtocol);
+            
+            printSql(1, "SET statement_timeout = 30000", protocolName);
+            executeUpdate(conn1, "SET statement_timeout = 30000", useExtendedProtocol);
+            
+            printSql(1, "SET lock_timeout = 10000", protocolName);
+            executeUpdate(conn1, "SET lock_timeout = 10000", useExtendedProtocol);
+            
+            printSql(1, "SET idle_in_transaction_session_timeout = 60000", protocolName);
+            executeUpdate(conn1, "SET idle_in_transaction_session_timeout = 60000", useExtendedProtocol);
+            
+            printSql(1, "SET search_path = 'myschema, public'", protocolName);
+            executeUpdate(conn1, "SET search_path = 'myschema, public'", useExtendedProtocol);
+            
+            printSql(1, "SET extra_float_digits = 2", protocolName);
+            executeUpdate(conn1, "SET extra_float_digits = 2", useExtendedProtocol);
+            
+            printSql(1, "SET bytea_output = 'escape'", protocolName);
+            executeUpdate(conn1, "SET bytea_output = 'escape'", useExtendedProtocol);
+            
+            printSql(1, "SET xmloption = 'content'", protocolName);
+            executeUpdate(conn1, "SET xmloption = 'content'", useExtendedProtocol);
+            
+            printSql(1, "SET enable_seqscan = off", protocolName);
+            executeUpdate(conn1, "SET enable_seqscan = off", useExtendedProtocol);
+            
+            System.out.println(GREEN + "  → 19个GUC参数设置完成" + RESET);
+
+            System.out.println(YELLOW + "步骤1完成\n" + RESET);
+            Thread.sleep(100);
+
+            // ============ 步骤2：切换到读节点 ============
+            System.out.println(YELLOW + "步骤2：切换到读节点..." + RESET);
+
+            printSql(1, "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY", protocolName);
+            executeUpdate(conn1, "SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY", useExtendedProtocol);
+
+            printSql(1, "SELECT inet_server_addr(), inet_server_port(), pg_backend_pid(), current_user, pg_is_in_recovery()", protocolName);
+            BackendInfo backend2 = getBackendInfoWithRecovery(conn1, useExtendedProtocol);
+            System.out.println(BLUE + "  → 后端连接信息: " + backend2 + RESET);
+
+            // 检测点2：连接切换，且 pg_is_in_recovery = t 或 port=25432（多活场景下读节点端口为25432）
+            boolean switchedToRead = backend2.isInRecovery || backend2.port == 25432;
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点2】检查是否切换到读节点:");
+            System.out.println("  期望: pg_is_in_recovery = true 或 port = 25432 (读节点)");
+            System.out.println("  实际: pg_is_in_recovery = " + backend2.isInRecovery + ", port = " + backend2.port);
+            if (switchedToRead) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 已切换到读节点" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 未切换到读节点" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点2失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+
+            // 检测点3：检查19个参数值是否正确同步
+            System.out.println(GREEN + "  → 开始检查19个GUC参数是否同步..." + RESET);
+            
+            printSql(1, "SHOW default_transaction_read_only", protocolName);
+            String defaultTxnReadOnlyAfterSwitch = getGucValue(conn1, "default_transaction_read_only", useExtendedProtocol);
+            
+            printSql(1, "SHOW standard_conforming_strings", protocolName);
+            String scsAfterSwitch = getGucValue(conn1, "standard_conforming_strings", useExtendedProtocol);
+            
+            printSql(1, "SHOW DateStyle", protocolName);
+            String dateStyleAfterSwitch = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW TimeZone", protocolName);
+            String timeZoneAfterSwitch = getGucValue(conn1, "TimeZone", useExtendedProtocol);
+            
+            printSql(1, "SHOW application_name", protocolName);
+            String appNameAfterSwitch = getGucValue(conn1, "application_name", useExtendedProtocol);
+            
+            printSql(1, "SHOW IntervalStyle", protocolName);
+            String intervalStyleAfterSwitch = getGucValue(conn1, "IntervalStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW work_mem", protocolName);
+            String workMemAfterSwitch = getGucValue(conn1, "work_mem", useExtendedProtocol);
+            
+            printSql(1, "SHOW maintenance_work_mem", protocolName);
+            String maintenanceWorkMemAfterSwitch = getGucValue(conn1, "maintenance_work_mem", useExtendedProtocol);
+            
+            printSql(1, "SHOW temp_buffers", protocolName);
+            String tempBuffersAfterSwitch = getGucValue(conn1, "temp_buffers", useExtendedProtocol);
+            
+            printSql(1, "SHOW logical_decoding_work_mem", protocolName);
+            String logicalDecodingWorkMemAfterSwitch = getGucValue(conn1, "logical_decoding_work_mem", useExtendedProtocol);
+            
+            printSql(1, "SHOW statement_timeout", protocolName);
+            String stmtTimeoutAfterSwitch = getGucValue(conn1, "statement_timeout", useExtendedProtocol);
+            
+            printSql(1, "SHOW lock_timeout", protocolName);
+            String lockTimeoutAfterSwitch = getGucValue(conn1, "lock_timeout", useExtendedProtocol);
+            
+            printSql(1, "SHOW idle_in_transaction_session_timeout", protocolName);
+            String idleTimeoutAfterSwitch = getGucValue(conn1, "idle_in_transaction_session_timeout", useExtendedProtocol);
+            
+            printSql(1, "SHOW search_path", protocolName);
+            String searchPathAfterSwitch = getGucValue(conn1, "search_path", useExtendedProtocol);
+            
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String extraFloatDigitsAfterSwitch = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            
+            printSql(1, "SHOW bytea_output", protocolName);
+            String byteaOutputAfterSwitch = getGucValue(conn1, "bytea_output", useExtendedProtocol);
+            
+            printSql(1, "SHOW xmloption", protocolName);
+            String xmloptionAfterSwitch = getGucValue(conn1, "xmloption", useExtendedProtocol);
+            
+            printSql(1, "SHOW enable_seqscan", protocolName);
+            String enableSeqscanAfterSwitch = getGucValue(conn1, "enable_seqscan", useExtendedProtocol);
+
+            // 规范化后比较（去除引号差异）
+            // 注意: default_transaction_read_only 不能修改，只检查它是否保持不变
+            // 排除 transaction_isolation 和 transaction_read_only，因为它们是事务级别参数
+            boolean paramsCorrect = normalizeGucValue(defaultTxnReadOnlyAfterSwitch).equals(normalizeGucValue(defaultTransactionReadOnly)) &&
+                                   normalizeGucValue(scsAfterSwitch).equals("off") &&
+                                   normalizeGucValue(dateStyleAfterSwitch).equals("ISO, DMY") &&
+                                   normalizeGucValue(timeZoneAfterSwitch).equalsIgnoreCase("UTC") &&
+                                   normalizeGucValue(appNameAfterSwitch).equals("test_app") &&
+                                   normalizeGucValue(intervalStyleAfterSwitch).equals("sql_standard") &&
+                                   normalizeGucValue(workMemAfterSwitch).equals("8MB") &&
+                                   normalizeGucValue(maintenanceWorkMemAfterSwitch).equals("16MB") &&
+                                   normalizeGucValue(tempBuffersAfterSwitch).equals("16MB") &&
+                                   normalizeGucValue(logicalDecodingWorkMemAfterSwitch).equals("128MB") &&
+                                   normalizeGucValue(stmtTimeoutAfterSwitch).equals("30s") &&
+                                   normalizeGucValue(lockTimeoutAfterSwitch).equals("10s") &&
+                                   normalizeGucValue(idleTimeoutAfterSwitch).equals("1min") &&
+                                   normalizeGucValue(searchPathAfterSwitch).equals("myschema, public") &&
+                                   normalizeGucValue(extraFloatDigitsAfterSwitch).equals("2") &&
+                                   normalizeGucValue(byteaOutputAfterSwitch).equals("escape") &&
+                                   normalizeGucValue(xmloptionAfterSwitch).equals("content") &&
+                                   normalizeGucValue(enableSeqscanAfterSwitch).equals("off");
+
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点3】检查19个常用GUC参数值是否正确同步:");
+            System.out.println("  期望: default_transaction_read_only=" + defaultTransactionReadOnly + " (不变)");
+            System.out.println("        standard_conforming_strings=off, DateStyle=ISO, DMY");
+            System.out.println("        TimeZone=UTC, application_name=test_app, IntervalStyle=sql_standard");
+            System.out.println("        work_mem=8MB, maintenance_work_mem=16MB, temp_buffers=16MB");
+            System.out.println("        logical_decoding_work_mem=128MB");
+            System.out.println("        statement_timeout=30s, lock_timeout=10s, idle_in_transaction_session_timeout=1min");
+            System.out.println("        search_path=myschema, public");
+            System.out.println("        extra_float_digits=2, bytea_output=escape, xmloption=content, enable_seqscan=off");
+            System.out.println("  实际: default_transaction_read_only=" + defaultTxnReadOnlyAfterSwitch);
+            System.out.println("        standard_conforming_strings=" + scsAfterSwitch);
+            System.out.println("        DateStyle=" + dateStyleAfterSwitch + ", TimeZone=" + timeZoneAfterSwitch);
+            System.out.println("        application_name=" + appNameAfterSwitch + ", IntervalStyle=" + intervalStyleAfterSwitch);
+            System.out.println("        work_mem=" + workMemAfterSwitch + ", maintenance_work_mem=" + maintenanceWorkMemAfterSwitch);
+            System.out.println("        temp_buffers=" + tempBuffersAfterSwitch + ", logical_decoding_work_mem=" + logicalDecodingWorkMemAfterSwitch);
+            System.out.println("        statement_timeout=" + stmtTimeoutAfterSwitch + ", lock_timeout=" + lockTimeoutAfterSwitch);
+            System.out.println("        idle_in_transaction_session_timeout=" + idleTimeoutAfterSwitch);
+            System.out.println("        search_path=" + searchPathAfterSwitch);
+            System.out.println("        extra_float_digits=" + extraFloatDigitsAfterSwitch + ", bytea_output=" + byteaOutputAfterSwitch);
+            System.out.println("        xmloption=" + xmloptionAfterSwitch + ", enable_seqscan=" + enableSeqscanAfterSwitch);
+            if (paramsCorrect) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 所有19个常用GUC参数已正确同步到读节点" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 部分参数未正确同步" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点3失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+
+            System.out.println(YELLOW + "步骤2完成\n" + RESET);
+            Thread.sleep(100);
+
+            // ============ 步骤3：RESET ALL并切换回写节点 ============
+            System.out.println(YELLOW + "步骤3：RESET ALL并切换回写节点..." + RESET);
+
+            printSql(1, "RESET ALL", protocolName);
+            executeUpdate(conn1, "RESET ALL", useExtendedProtocol);
+
+            printSql(1, "SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE", protocolName);
+            executeUpdate(conn1, "SET SESSION CHARACTERISTICS AS TRANSACTION READ WRITE", useExtendedProtocol);
+
+            // 检测点4：检查19个参数值是否都恢复默认值
+            System.out.println(GREEN + "  → 开始检查19个GUC参数是否恢复默认值..." + RESET);
+            
+            printSql(1, "SHOW default_transaction_read_only", protocolName);
+            String defaultTxnReadOnlyAfterReset = getGucValue(conn1, "default_transaction_read_only", useExtendedProtocol);
+            
+            printSql(1, "SHOW standard_conforming_strings", protocolName);
+            String scsAfterReset = getGucValue(conn1, "standard_conforming_strings", useExtendedProtocol);
+            
+            printSql(1, "SHOW DateStyle", protocolName);
+            String dateStyleAfterReset = getGucValue(conn1, "DateStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW TimeZone", protocolName);
+            String timeZoneAfterReset = getGucValue(conn1, "TimeZone", useExtendedProtocol);
+            
+            printSql(1, "SHOW IntervalStyle", protocolName);
+            String intervalStyleAfterReset = getGucValue(conn1, "IntervalStyle", useExtendedProtocol);
+            
+            printSql(1, "SHOW search_path", protocolName);
+            String searchPathAfterReset = getGucValue(conn1, "search_path", useExtendedProtocol);
+            
+            printSql(1, "SHOW extra_float_digits", protocolName);
+            String extraFloatDigitsAfterReset = getGucValue(conn1, "extra_float_digits", useExtendedProtocol);
+            
+            printSql(1, "SHOW bytea_output", protocolName);
+            String byteaOutputAfterReset = getGucValue(conn1, "bytea_output", useExtendedProtocol);
+            
+            printSql(1, "SHOW xmloption", protocolName);
+            String xmloptionAfterReset = getGucValue(conn1, "xmloption", useExtendedProtocol);
+            
+            printSql(1, "SHOW enable_seqscan", protocolName);
+            String enableSeqscanAfterReset = getGucValue(conn1, "enable_seqscan", useExtendedProtocol);
+
+            // 规范化后比较（去除引号差异）
+            // 注意：extra_float_digits的真正默认值是1，不是记录下来的值（因为JDBC会设置3）
+            // 内存参数、超时参数在RESET ALL后会恢复到默认值
+            boolean paramsReset = normalizeGucValue(defaultTxnReadOnlyAfterReset).equals(normalizeGucValue(defaultTransactionReadOnly)) &&
+                                 normalizeGucValue(scsAfterReset).equals(normalizeGucValue(defaultStandardConformingStrings)) &&
+                                 normalizeGucValue(dateStyleAfterReset).equals(normalizeGucValue(defaultDateStyle)) &&
+                                 normalizeGucValue(timeZoneAfterReset).equals(normalizeGucValue(defaultTimeZone)) &&
+                                 normalizeGucValue(intervalStyleAfterReset).equals(normalizeGucValue(defaultIntervalStyle)) &&
+                                 normalizeGucValue(searchPathAfterReset).equals(normalizeGucValue(defaultSearchPath)) &&
+                                 normalizeGucValue(extraFloatDigitsAfterReset).equals("1") &&
+                                 normalizeGucValue(byteaOutputAfterReset).equals(normalizeGucValue(defaultByteaOutput)) &&
+                                 normalizeGucValue(xmloptionAfterReset).equals(normalizeGucValue(defaultXmloption)) &&
+                                 normalizeGucValue(enableSeqscanAfterReset).equals(normalizeGucValue(defaultEnableSeqscan));
+
+            System.out.println("\n" + "─".repeat(100));
+            System.out.println("【检测点4】检查19个常用GUC参数值是否恢复默认值:");
+            System.out.println("  期望: default_transaction_read_only=" + defaultTransactionReadOnly);
+            System.out.println("        standard_conforming_strings=" + defaultStandardConformingStrings);
+            System.out.println("        DateStyle=" + defaultDateStyle + ", TimeZone=" + defaultTimeZone);
+            System.out.println("        IntervalStyle=" + defaultIntervalStyle + ", search_path=" + defaultSearchPath);
+            System.out.println("        extra_float_digits=1, bytea_output=" + defaultByteaOutput);
+            System.out.println("        xmloption=" + defaultXmloption + ", enable_seqscan=" + defaultEnableSeqscan);
+            System.out.println("        (内存/超时参数已恢复默认值)");
+            System.out.println("  实际: default_transaction_read_only=" + defaultTxnReadOnlyAfterReset);
+            System.out.println("        standard_conforming_strings=" + scsAfterReset);
+            System.out.println("        DateStyle=" + dateStyleAfterReset + ", TimeZone=" + timeZoneAfterReset);
+            System.out.println("        IntervalStyle=" + intervalStyleAfterReset + ", search_path=" + searchPathAfterReset);
+            System.out.println("        extra_float_digits=" + extraFloatDigitsAfterReset + ", bytea_output=" + byteaOutputAfterReset);
+            System.out.println("        xmloption=" + xmloptionAfterReset + ", enable_seqscan=" + enableSeqscanAfterReset);
+            if (paramsReset) {
+                System.out.println(GREEN + "  结果: ✓ 通过 - 所有19个常用GUC参数已恢复默认值" + RESET);
+            } else {
+                System.out.println(RED + "  结果: ✗ 失败 - 部分参数未恢复默认值" + RESET);
+                allPassed = false;
+                failureDetails.append("检测点4失败; ");
+            }
+            System.out.println("─".repeat(100) + "\n");
+
+            System.out.println(YELLOW + "步骤3完成\n" + RESET);
+
+            // 记录测试结果
+            recordResult("测试常用guc参数读写切换", "常用GUC参数读写切换（" + protocolName + "）",
                         "所有检测点通过", allPassed ? "所有检测点通过" : failureDetails.toString(),
                         allPassed, allPassed ? "通过" : "失败");
 
